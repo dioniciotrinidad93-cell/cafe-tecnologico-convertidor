@@ -3,7 +3,10 @@ package com.cafetecnologico.convertidor;
 import android.app.Activity;
 import android.content.ContentResolver;
 import android.content.ContentValues;
+import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
+import android.database.Cursor;
 import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Bundle;
@@ -30,17 +33,26 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.nio.ByteBuffer;
-import java.nio.ByteOrder;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class MainActivity extends Activity {
 
-    static final String VERSION = "0.1";
     static final String BASE = "https://generativelanguage.googleapis.com/v1beta";
-    static final int LIMITE_CARACTERES = 4000;
+    static final String REPO = "https://github.com/dioniciotrinidad93-cell/cafe-tecnologico-convertidor";
+    static final String URL_VERSION = REPO + "/releases/latest/download/version.json";
+    static final String URL_APK = REPO + "/releases/latest/download/Convertidor_Cafe_Tecnologico.apk";
+
+    static final int BYTES_POR_BLOQUE = 2500;
+    static final int MAX_BLOQUES = 12;
+    static final int PAUSA_ENTRE_BLOQUES_MS = 400;
+    static final int SILENCIO_FINAL_MS = 3000;
+    static final String MSG_DETENIDA = "Conversión detenida.";
 
     static final String[] MODELOS = {
         "gemini-3.8-flash-tts",
@@ -56,21 +68,27 @@ public class MainActivity extends Activity {
     };
 
     SharedPreferences prefs;
-    EditText campoClave, campoEstilo, campoTexto;
+    EditText campoClave, campoEstilo, campoTexto, campoNombre;
     Spinner listaModelo, listaVoz;
-    Button botonConvertir, botonReproducir, botonContar;
+    Button botonConvertir, botonDetener, botonReproducir, botonContar,
+            botonActualizar, botonBuscar;
     TextView estado;
     Handler ui = new Handler(Looper.getMainLooper());
     Uri ultimoAudio;
     String ultimoNombre = "";
     MediaPlayer reproductor;
     boolean ocupado = false;
+    volatile boolean cancelar = false;
+    long codigoVersion = 0;
+    String nombreVersion = "?";
 
     static class ApiException extends Exception {
         final int codigo;
-        ApiException(int codigo, String mensaje) {
+        final String cuerpo;
+        ApiException(int codigo, String mensaje, String cuerpo) {
             super(mensaje);
             this.codigo = codigo;
+            this.cuerpo = cuerpo == null ? "" : cuerpo;
         }
     }
 
@@ -79,6 +97,14 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         setTitle("Convertidor de texto a voz, Café Tecnológico");
         prefs = getSharedPreferences("cafe_tecnologico_convertidor", MODE_PRIVATE);
+
+        try {
+            PackageInfo pi = getPackageManager().getPackageInfo(getPackageName(), 0);
+            codigoVersion = pi.getLongVersionCode();
+            if (pi.versionName != null) nombreVersion = pi.versionName;
+        } catch (Exception ignorada) {
+            // se queda con los valores por defecto
+        }
 
         int p = dp(16);
         ScrollView sv = new ScrollView(this);
@@ -89,10 +115,15 @@ public class MainActivity extends Activity {
         sv.addView(raiz);
 
         TextView titulo = new TextView(this);
-        titulo.setText("Convertidor de texto a voz con Gemini. Versión " + VERSION);
+        titulo.setText("Convertidor de texto a voz con Gemini. Versión " + nombreVersion);
         titulo.setTextSize(22);
         titulo.setAccessibilityHeading(true);
         raiz.addView(titulo);
+
+        botonActualizar = new Button(this);
+        botonActualizar.setText("Descargar la actualización");
+        botonActualizar.setVisibility(View.GONE);
+        raiz.addView(botonActualizar);
 
         campoClave = new EditText(this);
         campoClave.setInputType(InputType.TYPE_CLASS_TEXT
@@ -119,6 +150,12 @@ public class MainActivity extends Activity {
         campoEstilo.setText(prefs.getString("estilo", ""));
         agregar(raiz, "Estilo de la voz, opcional", campoEstilo);
 
+        campoNombre = new EditText(this);
+        campoNombre.setInputType(InputType.TYPE_CLASS_TEXT);
+        campoNombre.setSingleLine(true);
+        campoNombre.setHint("Si lo dejas vacío se usa la fecha y la hora");
+        agregar(raiz, "Nombre del archivo de audio, opcional", campoNombre);
+
         campoTexto = new EditText(this);
         campoTexto.setInputType(InputType.TYPE_CLASS_TEXT
                 | InputType.TYPE_TEXT_FLAG_MULTI_LINE
@@ -136,10 +173,19 @@ public class MainActivity extends Activity {
         botonConvertir.setText("Convertir a audio");
         raiz.addView(botonConvertir);
 
+        botonDetener = new Button(this);
+        botonDetener.setText("Detener la conversión");
+        botonDetener.setEnabled(false);
+        raiz.addView(botonDetener);
+
         botonReproducir = new Button(this);
         botonReproducir.setText("Reproducir o detener el último audio");
         botonReproducir.setEnabled(false);
         raiz.addView(botonReproducir);
+
+        botonBuscar = new Button(this);
+        botonBuscar.setText("Buscar actualizaciones");
+        raiz.addView(botonBuscar);
 
         estado = new TextView(this);
         estado.setTextSize(16);
@@ -149,14 +195,29 @@ public class MainActivity extends Activity {
         estado.setPadding(0, p, 0, 0);
         raiz.addView(estado);
 
-        botonContar.setOnClickListener(v -> {
-            int n = campoTexto.getText().toString().length();
-            estado.setText("El texto tiene " + n + (n == 1 ? " carácter." : " caracteres."));
-        });
+        botonContar.setOnClickListener(v -> contar());
         botonConvertir.setOnClickListener(v -> convertir());
+        botonDetener.setOnClickListener(v -> {
+            cancelar = true;
+            estado.setText("Deteniendo. Se detendrá al terminar el bloque que se está convirtiendo.");
+        });
         botonReproducir.setOnClickListener(v -> reproducir());
+        botonBuscar.setOnClickListener(v -> {
+            estado.setText("Buscando actualizaciones.");
+            buscarActualizacion(true);
+        });
+        botonActualizar.setOnClickListener(v -> {
+            try {
+                startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(URL_APK)));
+                estado.setText("Se abrió el navegador para descargar la actualización. "
+                        + "Cuando termine, abre el archivo descargado para instalarla.");
+            } catch (Exception e) {
+                estado.setText("No se pudo abrir el navegador. " + e.getMessage());
+            }
+        });
 
         setContentView(sv);
+        buscarActualizacion(false);
     }
 
     @Override
@@ -168,6 +229,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        cancelar = true;
         if (reproductor != null) {
             reproductor.release();
             reproductor = null;
@@ -215,6 +277,22 @@ public class MainActivity extends Activity {
                 .apply();
     }
 
+    void contar() {
+        String t = campoTexto.getText().toString().trim();
+        int n = campoTexto.getText().toString().length();
+        int bloques = Audio.dividir(t, BYTES_POR_BLOQUE).size();
+        String m = "El texto tiene " + n + (n == 1 ? " carácter." : " caracteres.");
+        if (bloques > 1) m += " Se convertirá en " + bloques + " bloques.";
+        if (bloques > MAX_BLOQUES) {
+            m += " Es demasiado largo: el máximo es " + MAX_BLOQUES + " bloques.";
+        }
+        estado.setText(m);
+    }
+
+    void avisar(String m) {
+        ui.post(() -> estado.setText(m));
+    }
+
     // ---------- Conversión ----------
 
     void convertir() {
@@ -223,6 +301,7 @@ public class MainActivity extends Activity {
         final String clave = campoClave.getText().toString().trim();
         final String texto = campoTexto.getText().toString().trim();
         final String estilo = campoEstilo.getText().toString().trim();
+        final String nombre = campoNombre.getText().toString();
         final String modelo = (String) listaModelo.getSelectedItem();
         final String voz = (String) listaVoz.getSelectedItem();
 
@@ -236,20 +315,35 @@ public class MainActivity extends Activity {
             campoTexto.requestFocus();
             return;
         }
-        if (texto.length() > LIMITE_CARACTERES) {
-            estado.setText("En esta primera versión el texto puede tener hasta "
-                    + LIMITE_CARACTERES + " caracteres. Ahora tiene " + texto.length() + ".");
+        final List<String> bloques = Audio.dividir(texto, BYTES_POR_BLOQUE);
+        if (bloques.size() > MAX_BLOQUES) {
+            estado.setText("El texto es demasiado largo: tiene " + texto.length()
+                    + " caracteres y se convertiría en " + bloques.size() + " bloques. "
+                    + "El máximo es " + MAX_BLOQUES + " bloques. Conviértelo en partes.");
             return;
         }
 
         ocupado = true;
+        cancelar = false;
         botonConvertir.setEnabled(false);
-        estado.setText("Convirtiendo, espera un momento.");
+        botonDetener.setEnabled(true);
+        estado.setText(bloques.size() > 1
+                ? "Convirtiendo en " + bloques.size() + " bloques, espera un momento."
+                : "Convirtiendo, espera un momento.");
 
         new Thread(() -> {
             try {
-                byte[] wav = pedirAudio(clave, modelo, voz, estilo, texto);
-                Uri u = guardar(wav);
+                List<Audio> partes = new ArrayList<>();
+                for (int i = 0; i < bloques.size(); i++) {
+                    if (cancelar) throw new Exception(MSG_DETENIDA);
+                    if (bloques.size() > 1 && i > 0) {
+                        avisar("Convirtiendo el bloque " + (i + 1) + " de " + bloques.size() + ".");
+                    }
+                    byte[] datos = pedirConReintentos(clave, modelo, voz, estilo, bloques.get(i));
+                    partes.add(Audio.desdeBytes(datos));
+                }
+                byte[] wav = Audio.unir(partes, PAUSA_ENTRE_BLOQUES_MS, SILENCIO_FINAL_MS);
+                Uri u = guardar(wav, nombre);
                 ui.post(() -> terminado(u, null));
             } catch (Exception e) {
                 String m = e.getMessage() == null ? e.toString() : e.getMessage();
@@ -261,8 +355,13 @@ public class MainActivity extends Activity {
     void terminado(Uri u, String error) {
         ocupado = false;
         botonConvertir.setEnabled(true);
+        botonDetener.setEnabled(false);
         if (error != null) {
-            estado.setText("No se pudo convertir. " + error);
+            if (MSG_DETENIDA.equals(error)) {
+                estado.setText(MSG_DETENIDA);
+            } else {
+                estado.setText("No se pudo convertir. " + error);
+            }
             return;
         }
         ultimoAudio = u;
@@ -302,6 +401,45 @@ public class MainActivity extends Activity {
 
     // ---------- Google Gemini ----------
 
+    byte[] pedirConReintentos(String clave, String modelo, String voz, String estilo, String texto)
+            throws Exception {
+        int intento = 0;
+        while (true) {
+            if (cancelar) throw new Exception(MSG_DETENIDA);
+            try {
+                return pedirAudio(clave, modelo, voz, estilo, texto);
+            } catch (ApiException e) {
+                if (e.codigo != 429 || limiteDiario(e.cuerpo) || intento >= 3) throw e;
+                int espera = segundosDeEspera(e.cuerpo, intento);
+                intento++;
+                avisar("Google pidió esperar por el límite de uso. Reintento " + intento
+                        + " de 3 en " + espera + " segundos.");
+                for (int s = 0; s < espera; s++) {
+                    if (cancelar) throw new Exception(MSG_DETENIDA);
+                    Thread.sleep(1000);
+                }
+            }
+        }
+    }
+
+    static boolean limiteDiario(String cuerpo) {
+        return cuerpo.contains("PerDay") || cuerpo.contains("limit: 0");
+    }
+
+    static int segundosDeEspera(String cuerpo, int intento) {
+        Matcher m = Pattern.compile("\"retryDelay\"\\s*:\\s*\"(\\d+)").matcher(cuerpo);
+        if (m.find()) {
+            try {
+                int s = Integer.parseInt(m.group(1)) + 1;
+                return Math.max(5, Math.min(s, 90));
+            } catch (NumberFormatException ignorada) {
+                // usa los tiempos por defecto
+            }
+        }
+        int[] tiempos = {15, 30, 60};
+        return tiempos[Math.min(intento, tiempos.length - 1)];
+    }
+
     byte[] pedirAudio(String clave, String modelo, String voz, String estilo, String texto)
             throws Exception {
         String error1;
@@ -314,6 +452,7 @@ public class MainActivity extends Activity {
         try {
             return viaGenerateContent(clave, modelo, voz, estilo, texto);
         } catch (ApiException e2) {
+            if (e2.codigo == 429) throw e2;
             throw new Exception("La primera forma de pedir el audio falló: " + error1
                     + " La segunda también: " + e2.getMessage());
         }
@@ -433,7 +572,7 @@ public class MainActivity extends Activity {
         InputStream is = codigo >= 400 ? c.getErrorStream() : c.getInputStream();
         String resp = leer(is);
         c.disconnect();
-        if (codigo >= 400) throw new ApiException(codigo, mensajeError(resp, codigo));
+        if (codigo >= 400) throw new ApiException(codigo, mensajeError(resp, codigo), resp);
         return resp;
     }
 
@@ -457,42 +596,27 @@ public class MainActivity extends Activity {
         }
         String m = "Google respondió con el error " + codigo;
         if (!detalle.isEmpty()) m += ": " + detalle;
-        if (codigo == 429) m += " Se alcanzó el límite de uso de tu clave. Espera un minuto e inténtalo de nuevo.";
+        if (codigo == 429) {
+            m += limiteDiario(resp)
+                    ? " Se agotó el límite diario de tu clave. Inténtalo mañana o usa otro modelo."
+                    : " Se alcanzó el límite de uso de tu clave. Espera un minuto e inténtalo de nuevo.";
+        }
         return m;
     }
 
     byte[] decodificar(String base64) {
-        byte[] datos = Base64.decode(base64, Base64.DEFAULT);
-        boolean esWav = datos.length > 4 && datos[0] == 'R' && datos[1] == 'I'
-                && datos[2] == 'F' && datos[3] == 'F';
-        return esWav ? datos : envolverWav(datos);
-    }
-
-    static byte[] envolverWav(byte[] pcm) {
-        int frecuencia = 24000, canales = 1, bits = 16;
-        ByteBuffer bb = ByteBuffer.allocate(44 + pcm.length).order(ByteOrder.LITTLE_ENDIAN);
-        bb.put("RIFF".getBytes());
-        bb.putInt(36 + pcm.length);
-        bb.put("WAVE".getBytes());
-        bb.put("fmt ".getBytes());
-        bb.putInt(16);
-        bb.putShort((short) 1);
-        bb.putShort((short) canales);
-        bb.putInt(frecuencia);
-        bb.putInt(frecuencia * canales * bits / 8);
-        bb.putShort((short) (canales * bits / 8));
-        bb.putShort((short) bits);
-        bb.put("data".getBytes());
-        bb.putInt(pcm.length);
-        bb.put(pcm);
-        return bb.array();
+        return Base64.decode(base64, Base64.DEFAULT);
     }
 
     // ---------- Guardar en Descargas ----------
 
-    Uri guardar(byte[] wav) throws Exception {
-        String nombre = "Cafe_Tecnologico_"
-                + new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date()) + ".wav";
+    Uri guardar(byte[] wav, String nombrePedido) throws Exception {
+        String base = Audio.nombreSeguro(nombrePedido);
+        if (base.isEmpty()) {
+            base = "Cafe_Tecnologico_"
+                    + new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
+        }
+        String nombre = base + ".wav";
         ContentValues v = new ContentValues();
         v.put(MediaStore.Downloads.DISPLAY_NAME, nombre);
         v.put(MediaStore.Downloads.MIME_TYPE, "audio/wav");
@@ -504,7 +628,63 @@ public class MainActivity extends Activity {
         if (os == null) throw new Exception("No se pudo abrir el archivo en Descargas.");
         os.write(wav);
         os.close();
-        ultimoNombre = nombre;
+        ultimoNombre = nombreFinal(cr, u, nombre);
         return u;
+    }
+
+    /** Android cambia el nombre si ya existe uno igual; aquí se lee el nombre real. */
+    String nombreFinal(ContentResolver cr, Uri u, String porDefecto) {
+        try (Cursor c = cr.query(u, new String[] {MediaStore.MediaColumns.DISPLAY_NAME},
+                null, null, null)) {
+            if (c != null && c.moveToFirst()) {
+                String n = c.getString(0);
+                if (n != null && !n.isEmpty()) return n;
+            }
+        } catch (Exception ignorada) {
+            // se usa el nombre pedido
+        }
+        return porDefecto;
+    }
+
+    // ---------- Actualizaciones ----------
+
+    void buscarActualizacion(boolean manual) {
+        new Thread(() -> {
+            try {
+                HttpURLConnection c = (HttpURLConnection) new URL(URL_VERSION).openConnection();
+                c.setConnectTimeout(10000);
+                c.setReadTimeout(10000);
+                c.setInstanceFollowRedirects(true);
+                int cod = c.getResponseCode();
+                if (cod != 200) {
+                    c.disconnect();
+                    throw new Exception("El servidor respondió con el código " + cod + ".");
+                }
+                String txt = leer(c.getInputStream());
+                c.disconnect();
+                JSONObject j = new JSONObject(txt);
+                final long vc = j.getLong("versionCode");
+                final String vn = j.optString("versionName", "");
+                final String notas = j.optString("notas", "");
+                ui.post(() -> mostrarActualizacion(vc > codigoVersion, vn, notas, manual));
+            } catch (Exception e) {
+                if (manual) {
+                    String m = e.getMessage() == null ? e.toString() : e.getMessage();
+                    ui.post(() -> estado.setText("No se pudo buscar actualizaciones. " + m));
+                }
+            }
+        }).start();
+    }
+
+    void mostrarActualizacion(boolean hay, String vn, String notas, boolean manual) {
+        if (hay) {
+            botonActualizar.setVisibility(View.VISIBLE);
+            String m = "Hay una versión nueva" + (vn.isEmpty() ? "." : ": " + vn + ".");
+            if (!notas.isEmpty()) m += " Novedades: " + notas;
+            m += " Pulsa el botón Descargar la actualización, que está debajo del título.";
+            estado.setText(m);
+        } else if (manual) {
+            estado.setText("Tu versión está al día. Tienes la versión " + nombreVersion + ".");
+        }
     }
 }
