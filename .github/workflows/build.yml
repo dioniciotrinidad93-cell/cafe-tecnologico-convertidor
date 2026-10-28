@@ -24,10 +24,23 @@ jobs:
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-34" "build-tools;34.0.0" || true
 
+      - name: Preparar la firma
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "::error::Faltan los secretos KEYSTORE_BASE64 y KEYSTORE_PASSWORD en Settings, Secrets and variables, Actions."
+            exit 1
+          fi
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/llave.p12"
+          echo "KEYSTORE_FILE=$RUNNER_TEMP/llave.p12" >> "$GITHUB_ENV"
+          echo "KEYSTORE_PASSWORD=$(printf '%s' "$KEYSTORE_PASSWORD" | tr -d '[:space:]')" >> "$GITHUB_ENV"
+
       - name: Ordenar el proyecto
         run: |
           mkdir -p src/main/java/com/cafetecnologico/convertidor
-          mv MainActivity.java src/main/java/com/cafetecnologico/convertidor/
+          mv *.java src/main/java/com/cafetecnologico/convertidor/
           cat > src/main/AndroidManifest.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -56,11 +69,20 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Compilar
-        run: gradle assembleDebug --no-daemon
+      - name: Compilar y firmar
+        run: gradle assembleRelease --no-daemon
 
-      - name: Nombrar el APK
-        run: cp build/outputs/apk/debug/*.apk Convertidor_Cafe_Tecnologico.apk
+      - name: Nombrar el APK y crear version.json
+        id: version
+        run: |
+          cp build/outputs/apk/release/*.apk Convertidor_Cafe_Tecnologico.apk
+          VC=$(grep -oP "versionCode \K[0-9]+" build.gradle | head -1)
+          VN=$(grep -oP "versionName '\K[^']+" build.gradle | head -1)
+          if [ -f notas.txt ]; then NOTAS=$(cat notas.txt); else NOTAS=""; fi
+          jq -n --argjson vc "$VC" --arg vn "$VN" --arg n "$NOTAS" \
+            '{versionCode: $vc, versionName: $vn, notas: $n}' > version.json
+          cat version.json
+          echo "vn=$VN" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -70,6 +92,8 @@ jobs:
       - name: Publicar en Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v0.1-${{ github.run_number }}
-          name: Versión 0.1, compilación ${{ github.run_number }}
-          files: Convertidor_Cafe_Tecnologico.apk
+          tag_name: v${{ steps.version.outputs.vn }}-${{ github.run_number }}
+          name: Versión ${{ steps.version.outputs.vn }}, compilación ${{ github.run_number }}
+          files: |
+            Convertidor_Cafe_Tecnologico.apk
+            version.json
