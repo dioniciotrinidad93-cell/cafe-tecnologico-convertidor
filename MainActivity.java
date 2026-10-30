@@ -1,12 +1,18 @@
 package com.cafetecnologico.convertidor;
 
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.ContentResolver;
+import android.content.ClipData;
 import android.content.ContentValues;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.database.Cursor;
+import android.media.MediaCodec;
+import android.media.MediaCodecInfo;
+import android.media.MediaFormat;
+import android.media.MediaMuxer;
 import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Bundle;
@@ -29,10 +35,13 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.nio.ByteBuffer;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -59,6 +68,11 @@ public class MainActivity extends Activity {
         "gemini-3.8-flash-lite-tts"
     };
 
+    static final String[] FORMATOS = {
+        "WAV, sin comprimir",
+        "M4A, más ligero"
+    };
+
     static final String[] VOCES = {
         "Zephyr", "Puck", "Charon", "Kore", "Fenrir", "Leda", "Orus", "Aoede",
         "Callirrhoe", "Autonoe", "Enceladus", "Iapetus", "Umbriel", "Algieba",
@@ -69,13 +83,22 @@ public class MainActivity extends Activity {
 
     SharedPreferences prefs;
     EditText campoClave, campoEstilo, campoTexto, campoNombre;
-    Spinner listaModelo, listaVoz;
+    Spinner listaModelo, listaVoz, listaFormato;
     Button botonConvertir, botonDetener, botonReproducir, botonContar,
-            botonActualizar, botonBuscar;
+            botonActualizar, botonBuscar, botonCompartir, botonBorrar;
     TextView estado;
     Handler ui = new Handler(Looper.getMainLooper());
     Uri ultimoAudio;
     String ultimoNombre = "";
+    String ultimoMime = "audio/wav";
+    volatile String avisoFormato = "";
+    final Runnable cicloBorrador = new Runnable() {
+        @Override
+        public void run() {
+            guardarPrefs();
+            ui.postDelayed(this, 4000);
+        }
+    };
     MediaPlayer reproductor;
     boolean ocupado = false;
     volatile boolean cancelar = false;
@@ -154,7 +177,13 @@ public class MainActivity extends Activity {
         campoNombre.setInputType(InputType.TYPE_CLASS_TEXT);
         campoNombre.setSingleLine(true);
         campoNombre.setHint("Si lo dejas vacío se usa la fecha y la hora");
+        campoNombre.setText(prefs.getString("nombre", ""));
         agregar(raiz, "Nombre del archivo de audio, opcional", campoNombre);
+
+        listaFormato = new Spinner(this);
+        listaFormato.setAdapter(adaptador(FORMATOS));
+        listaFormato.setSelection(indice(FORMATOS, prefs.getString("formato", FORMATOS[0])));
+        agregar(raiz, "Formato del audio", listaFormato);
 
         campoTexto = new EditText(this);
         campoTexto.setInputType(InputType.TYPE_CLASS_TEXT
@@ -169,6 +198,10 @@ public class MainActivity extends Activity {
         botonContar.setText("Contar caracteres");
         raiz.addView(botonContar);
 
+        botonBorrar = new Button(this);
+        botonBorrar.setText("Borrar texto y borrador");
+        raiz.addView(botonBorrar);
+
         botonConvertir = new Button(this);
         botonConvertir.setText("Convertir a audio");
         raiz.addView(botonConvertir);
@@ -182,6 +215,11 @@ public class MainActivity extends Activity {
         botonReproducir.setText("Reproducir o detener el último audio");
         botonReproducir.setEnabled(false);
         raiz.addView(botonReproducir);
+
+        botonCompartir = new Button(this);
+        botonCompartir.setText("Compartir el último audio");
+        botonCompartir.setEnabled(false);
+        raiz.addView(botonCompartir);
 
         botonBuscar = new Button(this);
         botonBuscar.setText("Buscar actualizaciones");
@@ -202,6 +240,8 @@ public class MainActivity extends Activity {
             estado.setText("Deteniendo. Se detendrá al terminar el bloque que se está convirtiendo.");
         });
         botonReproducir.setOnClickListener(v -> reproducir());
+        botonCompartir.setOnClickListener(v -> compartir());
+        botonBorrar.setOnClickListener(v -> borrarTodo());
         botonBuscar.setOnClickListener(v -> {
             estado.setText("Buscando actualizaciones.");
             buscarActualizacion(true);
@@ -221,8 +261,16 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        ui.removeCallbacks(cicloBorrador);
+        ui.postDelayed(cicloBorrador, 4000);
+    }
+
+    @Override
     protected void onPause() {
         super.onPause();
+        ui.removeCallbacks(cicloBorrador);
         guardarPrefs();
     }
 
@@ -274,6 +322,8 @@ public class MainActivity extends Activity {
                 .putString("voz", (String) listaVoz.getSelectedItem())
                 .putString("estilo", campoEstilo.getText().toString())
                 .putString("borrador", campoTexto.getText().toString())
+                .putString("nombre", campoNombre.getText().toString())
+                .putString("formato", (String) listaFormato.getSelectedItem())
                 .apply();
     }
 
@@ -304,6 +354,7 @@ public class MainActivity extends Activity {
         final String nombre = campoNombre.getText().toString();
         final String modelo = (String) listaModelo.getSelectedItem();
         final String voz = (String) listaVoz.getSelectedItem();
+        final String formato = (String) listaFormato.getSelectedItem();
 
         if (clave.isEmpty()) {
             estado.setText("Falta la clave API. Escríbela o pégala en el primer campo.");
@@ -343,7 +394,7 @@ public class MainActivity extends Activity {
                     partes.add(Audio.desdeBytes(datos));
                 }
                 byte[] wav = Audio.unir(partes, PAUSA_ENTRE_BLOQUES_MS, SILENCIO_FINAL_MS);
-                Uri u = guardar(wav, nombre);
+                Uri u = guardar(wav, nombre, formato);
                 ui.post(() -> terminado(u, null));
             } catch (Exception e) {
                 String m = e.getMessage() == null ? e.toString() : e.getMessage();
@@ -366,8 +417,9 @@ public class MainActivity extends Activity {
         }
         ultimoAudio = u;
         botonReproducir.setEnabled(true);
+        botonCompartir.setEnabled(true);
         estado.setText("Listo. El audio se guardó en la carpeta Descargas con el nombre "
-                + ultimoNombre + ".");
+                + ultimoNombre + "." + avisoFormato);
     }
 
     void reproducir() {
@@ -397,6 +449,38 @@ public class MainActivity extends Activity {
             reproductor = null;
             estado.setText("No se pudo reproducir. " + e.getMessage());
         }
+    }
+
+    void compartir() {
+        if (ultimoAudio == null) {
+            estado.setText("Todavía no hay audio para compartir. Convierte un texto primero.");
+            return;
+        }
+        try {
+            Intent i = new Intent(Intent.ACTION_SEND);
+            i.setType(ultimoMime);
+            i.putExtra(Intent.EXTRA_STREAM, ultimoAudio);
+            i.setClipData(ClipData.newRawUri("audio", ultimoAudio));
+            i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivity(Intent.createChooser(i, "Compartir el audio"));
+            estado.setText("Se abrió la lista de aplicaciones para compartir " + ultimoNombre + ".");
+        } catch (Exception e) {
+            estado.setText("No se pudo compartir. " + e.getMessage());
+        }
+    }
+
+    void borrarTodo() {
+        new AlertDialog.Builder(this)
+                .setTitle("Borrar el texto")
+                .setMessage("Se borrará el texto y el borrador guardado. ¿Quieres continuar?")
+                .setPositiveButton("Sí, borrar", (d, w) -> {
+                    campoTexto.setText("");
+                    prefs.edit().putString("borrador", "").apply();
+                    estado.setText("Texto y borrador borrados.");
+                    campoTexto.requestFocus();
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
     }
 
     // ---------- Google Gemini ----------
@@ -610,26 +694,143 @@ public class MainActivity extends Activity {
 
     // ---------- Guardar en Descargas ----------
 
-    Uri guardar(byte[] wav, String nombrePedido) throws Exception {
+    Uri guardar(byte[] wav, String nombrePedido, String formato) throws Exception {
         String base = Audio.nombreSeguro(nombrePedido);
         if (base.isEmpty()) {
             base = "Cafe_Tecnologico_"
                     + new SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(new Date());
         }
-        String nombre = base + ".wav";
+        byte[] datos = wav;
+        String extension = ".wav";
+        String mime = "audio/wav";
+        avisoFormato = "";
+        if (formato != null && formato.startsWith("M4A")) {
+            try {
+                datos = aM4a(wav);
+                extension = ".m4a";
+                mime = "audio/mp4";
+            } catch (Exception e) {
+                avisoFormato = " No se pudo crear el M4A en este teléfono, así que se guardó en WAV.";
+            }
+        }
+        String nombre = base + extension;
         ContentValues v = new ContentValues();
         v.put(MediaStore.Downloads.DISPLAY_NAME, nombre);
-        v.put(MediaStore.Downloads.MIME_TYPE, "audio/wav");
+        v.put(MediaStore.Downloads.MIME_TYPE, mime);
         v.put(MediaStore.Downloads.RELATIVE_PATH, "Download/");
         ContentResolver cr = getContentResolver();
         Uri u = cr.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, v);
         if (u == null) throw new Exception("No se pudo crear el archivo en Descargas.");
         OutputStream os = cr.openOutputStream(u);
         if (os == null) throw new Exception("No se pudo abrir el archivo en Descargas.");
-        os.write(wav);
+        os.write(datos);
         os.close();
         ultimoNombre = nombreFinal(cr, u, nombre);
+        ultimoMime = mime;
         return u;
+    }
+
+    // ---------- Formato M4A ----------
+
+    byte[] aM4a(byte[] wav) throws Exception {
+        Audio a = Audio.desdeBytes(wav);
+        File tmp = File.createTempFile("audio", ".m4a", getCacheDir());
+        try {
+            codificarM4a(a.pcm, a.hz, a.canales, tmp);
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+            try (FileInputStream fis = new FileInputStream(tmp)) {
+                byte[] buf = new byte[16384];
+                int n;
+                while ((n = fis.read(buf)) > 0) bos.write(buf, 0, n);
+            }
+            if (bos.size() == 0) throw new Exception("El archivo M4A quedó vacío.");
+            return bos.toByteArray();
+        } finally {
+            tmp.delete();
+        }
+    }
+
+    /** Codifica PCM de 16 bits a AAC dentro de un contenedor M4A. */
+    static void codificarM4a(byte[] pcm, int hz, int canales, File destino) throws Exception {
+        MediaFormat fmt = MediaFormat.createAudioFormat(MediaFormat.MIMETYPE_AUDIO_AAC, hz, canales);
+        fmt.setInteger(MediaFormat.KEY_AAC_PROFILE, MediaCodecInfo.CodecProfileLevel.AACObjectLC);
+        fmt.setInteger(MediaFormat.KEY_BIT_RATE, 64000);
+        fmt.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, 16384);
+        MediaCodec codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_AUDIO_AAC);
+        MediaMuxer muxer = null;
+        boolean muxIniciado = false;
+        try {
+            codec.configure(fmt, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE);
+            codec.start();
+            muxer = new MediaMuxer(destino.getAbsolutePath(),
+                    MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4);
+            MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+            int pista = -1;
+            int pos = 0;
+            int marco = 2 * canales;
+            boolean entradaTerminada = false;
+            boolean salidaTerminada = false;
+            long limite = System.currentTimeMillis() + 180000;
+            while (!salidaTerminada) {
+                if (System.currentTimeMillis() > limite) {
+                    throw new Exception("El codificador tardó demasiado.");
+                }
+                if (!entradaTerminada) {
+                    int i = codec.dequeueInputBuffer(10000);
+                    if (i >= 0) {
+                        ByteBuffer entrada = codec.getInputBuffer(i);
+                        entrada.clear();
+                        int n = Math.min(entrada.capacity(), pcm.length - pos);
+                        n -= n % marco;
+                        long pts = (long) (pos / marco) * 1000000L / hz;
+                        if (n <= 0) {
+                            codec.queueInputBuffer(i, 0, 0, pts, MediaCodec.BUFFER_FLAG_END_OF_STREAM);
+                            entradaTerminada = true;
+                        } else {
+                            entrada.put(pcm, pos, n);
+                            pos += n;
+                            codec.queueInputBuffer(i, 0, n, pts, 0);
+                        }
+                    }
+                }
+                int o = codec.dequeueOutputBuffer(info, 10000);
+                if (o == MediaCodec.INFO_OUTPUT_FORMAT_CHANGED) {
+                    pista = muxer.addTrack(codec.getOutputFormat());
+                    muxer.start();
+                    muxIniciado = true;
+                } else if (o >= 0) {
+                    ByteBuffer salida = codec.getOutputBuffer(o);
+                    if ((info.flags & MediaCodec.BUFFER_FLAG_CODEC_CONFIG) != 0) info.size = 0;
+                    if (info.size > 0 && muxIniciado && salida != null) {
+                        salida.position(info.offset);
+                        salida.limit(info.offset + info.size);
+                        muxer.writeSampleData(pista, salida, info);
+                    }
+                    codec.releaseOutputBuffer(o, false);
+                    if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                        salidaTerminada = true;
+                    }
+                }
+            }
+            if (!muxIniciado) throw new Exception("El codificador no produjo audio.");
+            muxer.stop();
+            muxIniciado = false;
+        } finally {
+            try {
+                codec.stop();
+            } catch (Exception ignorada) {
+                // el codificador ya estaba detenido
+            }
+            codec.release();
+            if (muxer != null) {
+                try {
+                    if (muxIniciado) muxer.stop();
+                } catch (Exception ignorada) {
+                    // el contenedor ya estaba cerrado
+                }
+                muxer.release();
+            }
+        }
     }
 
     /** Android cambia el nombre si ya existe uno igual; aquí se lee el nombre real. */

@@ -210,7 +210,8 @@ final class Audio {
     /** Quita lo que Android no admite en nombres de archivo. Devuelve "" si no queda nada. */
     static String nombreSeguro(String entrada) {
         String s = entrada == null ? "" : entrada.trim();
-        if (s.toLowerCase(Locale.ROOT).endsWith(".wav")) s = s.substring(0, s.length() - 4);
+        String bajo = s.toLowerCase(Locale.ROOT);
+        if (bajo.endsWith(".wav") || bajo.endsWith(".m4a")) s = s.substring(0, s.length() - 4);
         s = s.replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "");
         s = s.replaceAll("\\s+", " ").trim();
         while (s.startsWith(".") || s.endsWith(".")) {
