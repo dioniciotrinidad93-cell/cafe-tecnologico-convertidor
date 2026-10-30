@@ -1,5 +1,5 @@
 {
-  "version": "0.7",
-  "novedades": "Perfeccionar con IA, expresiones de voz, efectos sugeridos, compartir el audio y formato M4A.",
-  "enlace": ""
+  "version": "0.8",
+  "novedades": "Perfeccionar con IA más estable: elige el modelo según el texto y reintenta con otro si Google tarda. Se quitó el efecto moto.",
+  "enlace": "https://raw.githubusercontent.com/dioniciotrinidad93-cell/cafe-tecnologico-convertidor/main/Convertidor_de_texto_a_voz_Cafe_Tecnologico_v0.8.ppk"
 }
