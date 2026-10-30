@@ -64,6 +64,7 @@ public class MainActivity extends Activity {
     static final int SILENCIO_FINAL_MS = 3000;
     static final String MSG_DETENIDA = "Conversión detenida.";
     static final int MAX_CARACTERES_IA = 8000;
+    static final int TIEMPO_TEXTO_MS = 90000;
 
     static final String[][] EXPRESIONES = {
         {"Cálido, con calidez", "warmly"},
@@ -716,6 +717,9 @@ public class MainActivity extends Activity {
                     } catch (ApiException e) {
                         ultimoError = e.getMessage();
                         if (e.codigo != 404 && e.codigo != 429 && e.codigo < 500) throw e;
+                    } catch (java.net.SocketTimeoutException e) {
+                        ultimoError = "Google tardó demasiado en responder con el modelo " + modelo
+                                + ". Prueba con un texto más corto o revisa tu conexión.";
                     }
                 }
                 if (resultado == null) throw new Exception(ultimoError);
@@ -865,8 +869,21 @@ public class MainActivity extends Activity {
         cuerpo.put("contents", new JSONArray().put(usuario));
         cuerpo.put("generationConfig", gen);
 
-        String resp = post(BASE + "/models/" + modelo + ":generateContent", clave,
-                cuerpo.toString());
+        String direccion = BASE + "/models/" + modelo + ":generateContent";
+        String resp;
+        if (modelo.startsWith("gemini-3") || modelo.startsWith("gemini-4")) {
+            // Menos "pensamiento" para que responda más rápido; si el modelo no lo admite, se reintenta sin eso.
+            gen.put("thinkingConfig", new JSONObject().put("thinkingLevel", "low"));
+            try {
+                resp = post(direccion, clave, cuerpo.toString(), TIEMPO_TEXTO_MS);
+            } catch (ApiException e) {
+                if (e.codigo != 400) throw e;
+                gen.remove("thinkingConfig");
+                resp = post(direccion, clave, cuerpo.toString(), TIEMPO_TEXTO_MS);
+            }
+        } else {
+            resp = post(direccion, clave, cuerpo.toString(), TIEMPO_TEXTO_MS);
+        }
         JSONObject r = new JSONObject(resp);
         StringBuilder sb = new StringBuilder();
         JSONArray cands = r.optJSONArray("candidates");
@@ -1053,10 +1070,15 @@ public class MainActivity extends Activity {
     }
 
     String post(String direccion, String clave, String cuerpo) throws Exception {
+        return post(direccion, clave, cuerpo, 180000);
+    }
+
+    String post(String direccion, String clave, String cuerpo, int lecturaMs)
+            throws Exception {
         HttpURLConnection c = (HttpURLConnection) new URL(direccion).openConnection();
         c.setRequestMethod("POST");
         c.setConnectTimeout(30000);
-        c.setReadTimeout(180000);
+        c.setReadTimeout(lecturaMs);
         c.setRequestProperty("Content-Type", "application/json; charset=utf-8");
         c.setRequestProperty("x-goog-api-key", clave);
         c.setDoOutput(true);
