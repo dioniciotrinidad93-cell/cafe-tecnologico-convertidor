@@ -14,6 +14,15 @@ android {
         versionName '1.4.0'
     }
 
+    sourceSets {
+        main {
+            // Manifiesto propio, en la raíz del repositorio: resuelve los conflictos con la
+            // librería MP3 (allowBackup y label). El flujo de compilación aún escribe otro en
+            // src/main, pero se ignora.
+            manifest.srcFile 'AndroidManifest.xml'
+        }
+    }
+
     signingConfigs {
         release {
             // La llave llega desde GitHub Actions (secretos). Sin ella no se firma.
