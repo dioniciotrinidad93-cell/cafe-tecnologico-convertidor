@@ -10,8 +10,8 @@ android {
         applicationId 'com.cafetecnologico.convertidor'
         minSdk 29
         targetSdk 34
-        versionCode 7
-        versionName '1.3.2'
+        versionCode 8
+        versionName '1.4.0'
     }
 
     signingConfigs {
@@ -44,4 +44,9 @@ android {
         abortOnError false
         checkReleaseBuilds false
     }
+}
+
+dependencies {
+    // Codificador MP3 (LAME). Se descarga desde JitPack.
+    implementation 'com.github.naman14:TAndroidLame:1.1'
 }

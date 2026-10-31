@@ -40,6 +40,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.reflect.Method;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.ByteBuffer;
@@ -149,7 +150,8 @@ public class MainActivity extends Activity {
 
     static final String[] FORMATOS = {
         "WAV, sin comprimir",
-        "M4A, más ligero"
+        "M4A, más ligero",
+        "MP3, compatible con todo"
     };
 
     static final String[] VOCES = {
@@ -1157,6 +1159,15 @@ public class MainActivity extends Activity {
             } catch (Exception e) {
                 avisoFormato = " No se pudo crear el M4A en este teléfono, así que se guardó en WAV.";
             }
+        } else if (formato != null && formato.startsWith("MP3")) {
+            try {
+                datos = aMp3(wav);
+                extension = ".mp3";
+                mime = "audio/mpeg";
+            } catch (Throwable t) {
+                avisoFormato = " No se pudo crear el MP3 en este teléfono (" + motivo(t)
+                        + "), así que se guardó en WAV.";
+            }
         }
         String nombre = base + extension;
         ContentValues v = new ContentValues();
@@ -1173,6 +1184,84 @@ public class MainActivity extends Activity {
         ultimoNombre = nombreFinal(cr, u, nombre);
         ultimoMime = mime;
         return u;
+    }
+
+    // ---------- Formato MP3 ----------
+
+    static String motivo(Throwable t) {
+        Throwable c = t;
+        while (c.getCause() != null && c.getCause() != c) c = c.getCause();
+        String m = c.getMessage();
+        return c.getClass().getSimpleName() + (m == null || m.isEmpty() ? "" : ": " + m);
+    }
+
+    static void ajustar(Object constructor, String metodo, int valor) throws Exception {
+        constructor.getClass().getMethod(metodo, int.class).invoke(constructor, valor);
+    }
+
+    /**
+     * Codifica el WAV a MP3 con la librería AndroidLame. Se usa por reflexión para que,
+     * si la librería no está o no carga en el teléfono, la app no se cierre: el aviso
+     * se muestra y el audio se guarda en WAV.
+     */
+    byte[] aMp3(byte[] wav) throws Exception {
+        Audio a = Audio.desdeBytes(wav);
+        final int canalesSalida = a.canales < 2 ? 1 : 2;
+        final int marco = 2 * a.canales;
+        final int total = a.pcm.length / marco;
+
+        Object builder = Class.forName("com.naman14.androidlame.LameBuilder")
+                .getDeclaredConstructor().newInstance();
+        ajustar(builder, "setInSampleRate", a.hz);
+        ajustar(builder, "setOutSampleRate", a.hz);
+        ajustar(builder, "setOutChannels", canalesSalida);
+        ajustar(builder, "setOutBitrate", canalesSalida == 1 ? 64 : 128);
+        ajustar(builder, "setQuality", 5);
+        Object lame = builder.getClass().getMethod("build").invoke(builder);
+
+        Class<?> clase = lame.getClass();
+        Method codificar = clase.getMethod("encode",
+                short[].class, short[].class, int.class, byte[].class);
+        Method cerrarFlujo;
+        try {
+            cerrarFlujo = clase.getMethod("flush", byte[].class);
+        } catch (NoSuchMethodException e) {
+            cerrarFlujo = clase.getMethod("lameFlush", byte[].class);
+        }
+
+        final int bloque = 8192;
+        short[] izq = new short[bloque];
+        short[] der = new short[bloque];
+        byte[] salida = new byte[(int) (1.25 * bloque) + 7200];
+        ByteArrayOutputStream bos = new ByteArrayOutputStream();
+        int pos = 0;
+        try {
+            while (pos < total) {
+                int n = Math.min(bloque, total - pos);
+                for (int i = 0; i < n; i++) {
+                    int b = (pos + i) * marco;
+                    short l = (short) ((a.pcm[b] & 0xFF) | (a.pcm[b + 1] << 8));
+                    izq[i] = l;
+                    der[i] = a.canales >= 2
+                            ? (short) ((a.pcm[b + 2] & 0xFF) | (a.pcm[b + 3] << 8))
+                            : l;
+                }
+                int w = (Integer) codificar.invoke(lame, izq, der, n, salida);
+                if (w < 0) throw new Exception("el codificador devolvió el error " + w);
+                if (w > 0) bos.write(salida, 0, w);
+                pos += n;
+            }
+            int w = (Integer) cerrarFlujo.invoke(lame, (Object) salida);
+            if (w > 0) bos.write(salida, 0, w);
+        } finally {
+            try {
+                clase.getMethod("close").invoke(lame);
+            } catch (Exception ignorada) {
+                // la librería ya estaba cerrada o no tiene ese método
+            }
+        }
+        if (bos.size() == 0) throw new Exception("el archivo MP3 quedó vacío");
+        return bos.toByteArray();
     }
 
     // ---------- Formato M4A ----------
