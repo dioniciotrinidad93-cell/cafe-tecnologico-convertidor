@@ -65,6 +65,8 @@ public class MainActivity extends Activity {
     static final String MSG_DETENIDA = "Conversión detenida.";
     static final int MAX_CARACTERES_IA = 8000;
     static final int TIEMPO_TEXTO_MS = 90000;
+    /** Hasta esta cantidad de caracteres se prueba primero con Flash Lite; más allá, con Flash. */
+    static final int MAX_CARACTERES_TEXTO_CORTO = 1500;
 
     static final String[][] EXPRESIONES = {
         {"Cálido, con calidez", "warmly"},
@@ -705,11 +707,17 @@ public class MainActivity extends Activity {
 
         new Thread(() -> {
             try {
-                String[] modelos = modelosDeTexto(clave);
+                String[] modelos = modelosDeTexto(clave); // {Flash, Flash Lite}
+                // Textos cortos: primero Flash Lite, que es más rápido. Textos largos, o crear
+                // un texto desde cero: primero Flash. El otro modelo queda como respaldo.
+                boolean corto = modo != 2 && texto.length() <= MAX_CARACTERES_TEXTO_CORTO;
+                if (corto) modelos = new String[] {modelos[1], modelos[0]};
                 String resultado = null;
                 String usado = null;
                 String ultimoError = "";
-                for (String modelo : modelos) {
+                for (int k = 0; k < modelos.length; k++) {
+                    String modelo = modelos[k];
+                    boolean hayOtro = k < modelos.length - 1;
                     try {
                         resultado = pedirTexto(clave, modelo, instruccion, texto, temperatura);
                         usado = modelo;
@@ -717,9 +725,13 @@ public class MainActivity extends Activity {
                     } catch (ApiException e) {
                         ultimoError = e.getMessage();
                         if (e.codigo != 404 && e.codigo != 429 && e.codigo < 500) throw e;
+                        if (hayOtro) avisar("El modelo " + modelo + " no pudo responder. "
+                                + "Probando con " + modelos[k + 1] + ".");
                     } catch (java.net.SocketTimeoutException e) {
                         ultimoError = "Google tardó demasiado en responder con el modelo " + modelo
                                 + ". Prueba con un texto más corto o revisa tu conexión.";
+                        if (hayOtro) avisar("Google tardó demasiado con " + modelo
+                                + ". Probando con " + modelos[k + 1] + ".");
                     }
                 }
                 if (resultado == null) throw new Exception(ultimoError);
