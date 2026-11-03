@@ -24,8 +24,10 @@ import android.text.InputType;
 import android.util.Base64;
 import android.view.Gravity;
 import android.view.View;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
@@ -179,35 +181,35 @@ public class MainActivity extends Activity {
     static final int NUM_VIAS_CONV = 5;
 
     static final String AYUDA_NOVEDADES =
-            "Novedades de la versión 1.5.0.\n\n"
-            + "Conversación con dos voces. Escribe un diálogo entre dos personas y la app lo "
-            + "convierte con una voz para cada una, en una sola petición a Google por cada bloque "
-            + "de texto. Escribe cada intervención en una línea nueva, con el nombre y dos puntos "
-            + "al inicio. Por ejemplo, una línea: Ana: ¿Ya llegaste? y la siguiente: Luis: Ya "
-            + "estoy en la puerta. Deben ser exactamente dos nombres distintos y el texto debe "
-            + "empezar con uno de ellos. Los nombres no se leen en voz alta. El primer nombre usa "
-            + "la voz que tengas elegida en Voz, y el segundo usa el nuevo campo Segunda voz de la "
-            + "conversación. En automática, la app elige una voz de distinto género que la "
-            + "primera. Las expresiones de voz y el estilo también funcionan dentro del diálogo, "
-            + "y el estilo se aplica a las dos voces. Contar caracteres te avisa si detecta una "
-            + "conversación. Perfeccionar con IA respeta los nombres de los personajes, y Crear un "
-            + "texto puede escribirte un diálogo de dos personajes.\n\n"
-            + "Avisos para el lector de pantalla. Ahora la app dice en voz alta lo que ocurre al "
-            + "convertir: Convirtiendo audio, Audio generado, o Audio fallido con el motivo. Lo "
-            + "mismo al perfeccionar un texto. Así también funciona con Jieshuo y Prudence, que "
-            + "no leen todos los cambios en vivo como TalkBack.\n\n"
-            + "Señales sonoras. Son las mismas del complemento: un sonido al abrir la app, un "
-            + "sonido de carga mientras convierte o perfecciona, otro cuando el audio queda listo "
-            + "y otro cuando hay un aviso o un error.\n\n"
-            + "Ayuda más corta. Este botón Ayuda trae solo las novedades de la versión actual. Las "
-            + "de las tres versiones anteriores están en el botón Novedades anteriores, de esta "
-            + "misma pantalla. La ayuda se abre sola una vez cada vez que se instala una versión "
-            + "nueva.\n\n"
-            + "Corrección. Si escribes el nombre del archivo con .mp3 al final, ya no se repite "
-            + "la extensión.";
+            "Novedades de la versión 1.6.0.\n\n"
+            + "Biblioteca de voces. Función experimental. Está al final de la pantalla, después "
+            + "del botón Buscar actualizaciones. Trae las voces regionales en español de la "
+            + "biblioteca extendida de Google: México, Argentina y España. Para usarla, pulsa "
+            + "Cargar las voces en español de la biblioteca, con tu clave API escrita. Después "
+            + "elige la región, el género y la voz, y pulsa Probar la voz elegida para escucharla "
+            + "sin guardar nada. Para convertir con ella, marca la casilla Usar la voz de la "
+            + "biblioteca al convertir y pulsa Convertir a audio como siempre.\n\n"
+            + "Todo lo demás funciona igual con estas voces: el estilo, las expresiones de voz, "
+            + "los textos largos, el formato del audio y la conversación con dos voces. En una "
+            + "conversación, la segunda voz de la biblioteca puede ser automática, de distinto "
+            + "género y de la misma región que la primera. Si Google no acepta dos voces de la "
+            + "biblioteca juntas, la app lo avisa y usa dos de las 30 voces de siempre.\n\n"
+            + "Si una voz de la biblioteca falla, la app cambia sola a una de las 30 voces de "
+            + "siempre, de igual género, y te avisa. Los errores de límite de uso o de conexión "
+            + "no cambian la voz: se tratan como siempre.\n\n"
+            + "Es una función en prueba. Los nombres de las voces son genéricos, como Soporte "
+            + "técnico 7 o Atención al cliente 5, y Google puede cambiar o retirar la biblioteca, "
+            + "o limitarla a cuentas con pago. Si eso pasa, las 30 voces de siempre no cambian.";
 
     static final String AYUDA_ANTERIORES =
             "Novedades anteriores. Aquí están las de las tres versiones previas.\n\n"
+            + "Novedades de la versión 1.5.0.\n"
+            + "Conversación con dos voces: escribe un diálogo con el nombre y dos puntos al "
+            + "inicio de cada línea, con exactamente dos nombres, y la app usa una voz para cada "
+            + "uno. El segundo nombre usa el campo Segunda voz de la conversación. Avisos en voz "
+            + "alta para lectores de pantalla al convertir y perfeccionar. Señales sonoras de "
+            + "inicio, carga, éxito y aviso. Ayuda más corta, con las novedades de la versión "
+            + "actual. Corrección: si escribes .mp3 al final del nombre, ya no se repite.\n\n"
             + "Novedades de la versión 1.4.0.\n"
             + "MP3. El selector Formato del audio ahora tiene tres opciones: WAV, M4A y MP3. El MP3 "
             + "se reproduce en casi cualquier aparato y pesa unas diez veces menos que el WAV. Se "
@@ -218,10 +220,7 @@ public class MainActivity extends Activity {
             + "Perfeccionar con IA más rápido. Para textos de hasta 1500 caracteres usa primero "
             + "Flash Lite, y para textos largos y para crear textos usa primero Flash. Si un "
             + "modelo falla o tarda demasiado, la app prueba sola con el otro y lo avisa en "
-            + "pantalla.\n\n"
-            + "Novedades de la versión 1.3.1.\n"
-            + "Más tiempo de espera, 90 segundos, y menos pensamiento del modelo en Perfeccionar "
-            + "con IA, para evitar el error de tiempo agotado.";
+            + "pantalla.";
 
     SharedPreferences prefs;
     EditText campoClave, campoEstilo, campoTexto, campoNombre;
@@ -237,6 +236,18 @@ public class MainActivity extends Activity {
     String textoAnterior = null;
     boolean perfeccionando = false;
     volatile String avisoFormato = "";
+    volatile String avisoVoz = "";
+
+    // Biblioteca de voces (experimental)
+    CheckBox usarBib;
+    Button botonCargarBib, botonProbarBib;
+    Spinner listaBibRegion, listaBibGenero, listaBibVoz, listaBibVoz2;
+    List<Audio.Biblioteca.Voz> bibTodas = new ArrayList<>();
+    List<String[]> bibRegiones = new ArrayList<>();
+    List<Audio.Biblioteca.Voz> bibMostradas = new ArrayList<>();
+    String bibVozId = "";
+    String bibVoz2Id = "";
+    boolean cargandoBib = false;
     final Runnable cicloBorrador = new Runnable() {
         @Override
         public void run() {
@@ -394,6 +405,8 @@ public class MainActivity extends Activity {
         botonBuscar = new Button(this);
         botonBuscar.setText("Buscar actualizaciones");
         raiz.addView(botonBuscar);
+
+        construirBiblioteca(raiz);
 
         estado = new TextView(this);
         estado.setTextSize(16);
@@ -610,6 +623,11 @@ public class MainActivity extends Activity {
                 .putString("borrador", campoTexto.getText().toString())
                 .putString("nombre", campoNombre.getText().toString())
                 .putString("formato", (String) listaFormato.getSelectedItem())
+                .putBoolean("bib_usar", usarBib.isChecked())
+                .putString("bib_region", regionBibElegida())
+                .putInt("bib_genero", Math.max(0, listaBibGenero.getSelectedItemPosition()))
+                .putString("bib_voz", bibVozId)
+                .putString("bib_voz2", bibVoz2Id)
                 .apply();
     }
 
@@ -644,9 +662,15 @@ public class MainActivity extends Activity {
         final String estilo = campoEstilo.getText().toString().trim();
         final String nombre = campoNombre.getText().toString();
         final String modelo = (String) listaModelo.getSelectedItem();
-        final String voz = (String) listaVoz.getSelectedItem();
+        final Audio.Biblioteca.Voz vozBib = usarBib.isChecked() ? bibElegida() : null;
+        final String voz = vozBib != null ? vozBib.id : (String) listaVoz.getSelectedItem();
         final String formato = (String) listaFormato.getSelectedItem();
 
+        if (usarBib.isChecked() && vozBib == null) {
+            rechazar("Marcaste usar la biblioteca de voces, pero no hay una voz elegida. "
+                    + "Carga las voces y elige una, o desmarca la casilla.");
+            return;
+        }
         if (clave.isEmpty()) {
             rechazar("Falta la clave API. Escríbela o pégala en el primer campo.");
             campoClave.requestFocus();
@@ -669,12 +693,31 @@ public class MainActivity extends Activity {
         final Audio.Conversacion conv = Audio.Conversacion.detectar(texto);
         boolean mismaVoz = false;
         if (conv != null) {
-            String voz2 = voz2Elegida();
-            mismaVoz = !voz2.isEmpty() && voz2.equals(voz);
-            if (voz2.isEmpty() || mismaVoz) voz2 = Audio.Conversacion.vozAutomatica(voz);
+            String voz2;
+            if (vozBib != null) {
+                voz2 = bibVoz2Id;
+                mismaVoz = !voz2.isEmpty() && voz2.equals(voz);
+                if (voz2.isEmpty() || mismaVoz) {
+                    Audio.Biblioteca.Voz otra = Audio.Biblioteca.automatica(bibTodas, vozBib);
+                    voz2 = otra != null ? otra.id
+                            : Audio.Conversacion.vozAutomatica(vozDeRespaldo(vozBib));
+                }
+            } else {
+                voz2 = voz2Elegida();
+                mismaVoz = !voz2.isEmpty() && voz2.equals(voz);
+                if (voz2.isEmpty() || mismaVoz) voz2 = Audio.Conversacion.vozAutomatica(voz);
+            }
             conv.voces[0] = voz;
             conv.voces[1] = voz2;
         }
+        // Si la voz de la biblioteca falla, se vuelve a las 30 voces de siempre.
+        final String[] vozActual = {voz};
+        final String[] respaldo = new String[2];
+        if (vozBib != null) {
+            respaldo[0] = vozDeRespaldo(vozBib);
+            respaldo[1] = Audio.Conversacion.vozAutomatica(respaldo[0]);
+        }
+        avisoVoz = "";
 
         ocupado = true;
         cancelar = false;
@@ -683,8 +726,8 @@ public class MainActivity extends Activity {
         String inicio = "Convirtiendo audio.";
         if (conv != null) {
             inicio += " Conversación entre " + conv.nombres[0] + " y " + conv.nombres[1] + ". "
-                    + conv.nombres[0] + " usa la voz " + conv.voces[0] + " y " + conv.nombres[1]
-                    + " usa la voz " + conv.voces[1] + "."
+                    + conv.nombres[0] + " usa la voz " + nombreVoz(conv.voces[0]) + " y "
+                    + conv.nombres[1] + " usa la voz " + nombreVoz(conv.voces[1]) + "."
                     + (mismaVoz ? " Elegiste la misma voz para los dos, así que la segunda es "
                         + "automática." : "");
         }
@@ -704,12 +747,12 @@ public class MainActivity extends Activity {
                     if (conv != null) {
                         List<Audio.Conversacion.Turno> turnos = conv.turnos(bloques.get(i));
                         if (turnos.isEmpty()) continue;
-                        datos = pedirConReintentos(clave, modelo, voz, estilo, bloques.get(i),
-                                conv, turnos);
+                        datos = pedirConRespaldo(clave, modelo, estilo, bloques.get(i),
+                                conv, turnos, vozActual, respaldo);
                         conv.hablante = conv.ultimoDe(turnos);
                     } else {
-                        datos = pedirConReintentos(clave, modelo, voz, estilo, bloques.get(i),
-                                null, null);
+                        datos = pedirConRespaldo(clave, modelo, estilo, bloques.get(i),
+                                null, null, vozActual, respaldo);
                     }
                     partes.add(Audio.desdeBytes(datos));
                 }
@@ -742,7 +785,7 @@ public class MainActivity extends Activity {
         botonCompartir.setEnabled(true);
         sonar("exito");
         decir("Audio generado. Se guardó en la carpeta Descargas con el nombre "
-                + ultimoNombre + "." + avisoFormato);
+                + ultimoNombre + "." + avisoFormato + avisoVoz);
     }
 
     void reproducir() {
@@ -1158,6 +1201,414 @@ public class MainActivity extends Activity {
         return sb.toString();
     }
 
+    // ---------- Biblioteca de voces (función experimental) ----------
+
+    void construirBiblioteca(LinearLayout raiz) {
+        TextView titulo = new TextView(this);
+        titulo.setText("Biblioteca de voces. Función experimental.");
+        titulo.setTextSize(20);
+        titulo.setAccessibilityHeading(true);
+        titulo.setPadding(0, dp(24), 0, 0);
+        raiz.addView(titulo);
+
+        TextView nota = new TextView(this);
+        nota.setText("Voces regionales en español de la biblioteca extendida de Google: México, "
+                + "Argentina y España. Está en prueba y Google puede cambiarla o retirarla. Si una "
+                + "voz falla, la app usa sola una de las 30 voces de siempre y te avisa.");
+        nota.setTextSize(16);
+        raiz.addView(nota);
+
+        bibTodas = Audio.Biblioteca.leer(prefs.getString("bib_voces", ""));
+        bibVozId = prefs.getString("bib_voz", "");
+        bibVoz2Id = prefs.getString("bib_voz2", "");
+
+        botonCargarBib = new Button(this);
+        botonCargarBib.setText("Cargar las voces en español de la biblioteca");
+        raiz.addView(botonCargarBib);
+
+        usarBib = new CheckBox(this);
+        usarBib.setText("Usar la voz de la biblioteca al convertir, en lugar de la lista Voz");
+        usarBib.setChecked(prefs.getBoolean("bib_usar", false));
+        raiz.addView(usarBib);
+
+        listaBibRegion = new Spinner(this);
+        agregar(raiz, "Región de la biblioteca", listaBibRegion);
+
+        listaBibGenero = new Spinner(this);
+        listaBibGenero.setAdapter(adaptador(Audio.Biblioteca.GENEROS_TEXTO));
+        listaBibGenero.setSelection(Math.max(0, Math.min(prefs.getInt("bib_genero", 0),
+                Audio.Biblioteca.GENEROS_TEXTO.length - 1)));
+        agregar(raiz, "Género de la voz de la biblioteca", listaBibGenero);
+
+        listaBibVoz = new Spinner(this);
+        agregar(raiz, "Voz de la biblioteca", listaBibVoz);
+
+        listaBibVoz2 = new Spinner(this);
+        agregar(raiz, "Segunda voz de la biblioteca, solo para conversaciones", listaBibVoz2);
+
+        botonProbarBib = new Button(this);
+        botonProbarBib.setText("Probar la voz elegida de la biblioteca");
+        raiz.addView(botonProbarBib);
+
+        llenarRegionesBib(prefs.getString("bib_region", ""));
+
+        AdapterView.OnItemSelectedListener filtro = new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> padre, android.view.View vista, int pos,
+                                       long id) {
+                if (!cargandoBib) refrescarVocesBib();
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> padre) {
+            }
+        };
+        listaBibRegion.setOnItemSelectedListener(filtro);
+        listaBibGenero.setOnItemSelectedListener(filtro);
+        listaBibVoz.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> padre, android.view.View vista, int pos,
+                                       long id) {
+                if (!cargandoBib && pos >= 0 && pos < bibMostradas.size()) {
+                    bibVozId = bibMostradas.get(pos).id;
+                }
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> padre) {
+            }
+        });
+        listaBibVoz2.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> padre, android.view.View vista, int pos,
+                                       long id) {
+                if (cargandoBib) return;
+                bibVoz2Id = pos >= 1 && pos - 1 < bibMostradas.size()
+                        ? bibMostradas.get(pos - 1).id : "";
+            }
+
+            @Override
+            public void onNothingSelected(AdapterView<?> padre) {
+            }
+        });
+        botonCargarBib.setOnClickListener(v -> cargarVocesBib());
+        botonProbarBib.setOnClickListener(v -> probarVozBib());
+        usarBib.setOnCheckedChangeListener((b, marcada) -> {
+            if (marcada && bibTodas.isEmpty()) {
+                decir("Marcaste usar la biblioteca. Primero pulsa Cargar las voces en español de "
+                        + "la biblioteca.");
+            } else {
+                decir(marcada ? "Se usará la voz de la biblioteca al convertir."
+                        : "Se usará la voz de la lista Voz al convertir.");
+            }
+        });
+    }
+
+    /** Llena la lista de regiones con lo que hay cargado y deja elegida la guardada. */
+    void llenarRegionesBib(String acentoGuardado) {
+        cargandoBib = true;
+        bibRegiones = Audio.Biblioteca.regiones(bibTodas);
+        String[] textos = new String[bibRegiones.size()];
+        int sel = 0;
+        for (int i = 0; i < textos.length; i++) {
+            textos[i] = bibRegiones.get(i)[1];
+            if (bibRegiones.get(i)[0].equals(acentoGuardado)) sel = i;
+        }
+        listaBibRegion.setAdapter(adaptador(textos));
+        listaBibRegion.setSelection(sel);
+        cargandoBib = false;
+        refrescarVocesBib();
+    }
+
+    String regionBibElegida() {
+        int pos = listaBibRegion == null ? -1 : listaBibRegion.getSelectedItemPosition();
+        return pos >= 0 && pos < bibRegiones.size() ? bibRegiones.get(pos)[0] : "";
+    }
+
+    /** Vuelve a llenar las listas de voces según la región y el género elegidos. */
+    void refrescarVocesBib() {
+        cargandoBib = true;
+        String acento = regionBibElegida();
+        int g = Math.max(0, listaBibGenero.getSelectedItemPosition());
+        bibMostradas = Audio.Biblioteca.filtrar(bibTodas, acento,
+                Audio.Biblioteca.GENEROS_CODIGO[Math.min(g,
+                        Audio.Biblioteca.GENEROS_CODIGO.length - 1)]);
+        int n = bibMostradas.size();
+        String[] etq = new String[Math.max(1, n)];
+        String[] etq2 = new String[n + 1];
+        etq2[0] = "Automática, de distinto género y de la misma región";
+        int sel = 0;
+        int sel2 = 0;
+        if (n == 0) {
+            etq[0] = bibTodas.isEmpty() ? "Aún no hay voces cargadas"
+                    : "No hay voces con esos filtros";
+        }
+        for (int i = 0; i < n; i++) {
+            Audio.Biblioteca.Voz v = bibMostradas.get(i);
+            String t = v.etiqueta();
+            if (acento.isEmpty()) t += ", " + Audio.Biblioteca.nombreAcento(v.acento);
+            etq[i] = t;
+            etq2[i + 1] = t;
+            if (v.id.equals(bibVozId)) sel = i;
+            if (v.id.equals(bibVoz2Id)) sel2 = i + 1;
+        }
+        listaBibVoz.setAdapter(adaptador(etq));
+        listaBibVoz.setSelection(sel);
+        listaBibVoz2.setAdapter(adaptador(etq2));
+        listaBibVoz2.setSelection(sel2);
+        if (n > 0) bibVozId = bibMostradas.get(sel).id;
+        cargandoBib = false;
+    }
+
+    Audio.Biblioteca.Voz bibElegida() {
+        for (Audio.Biblioteca.Voz v : bibTodas) {
+            if (v.id.equals(bibVozId)) return v;
+        }
+        return null;
+    }
+
+    /** Voz de las 30 a la que se vuelve si la de la biblioteca no funciona: mismo género. */
+    static String vozDeRespaldo(Audio.Biblioteca.Voz v) {
+        return "male".equals(v.genero) ? "Charon" : "Kore";
+    }
+
+    /** Las voces de la biblioteca llevan guiones y números; las 30 de siempre, solo un nombre. */
+    static boolean esBiblioteca(String voz) {
+        return voz != null && voz.indexOf('-') >= 0;
+    }
+
+    String nombreVoz(String id) {
+        if (!esBiblioteca(id)) return id;
+        for (Audio.Biblioteca.Voz v : bibTodas) {
+            if (v.id.equals(id)) return v.etiqueta() + ", " + Audio.Biblioteca.nombreAcento(v.acento);
+        }
+        return id;
+    }
+
+    /** Configuración de una voz para generateContent: de biblioteca con "voice", las demás prediseñadas. */
+    static JSONObject configVozGC(String voz) throws Exception {
+        if (esBiblioteca(voz)) return new JSONObject().put("voice", voz);
+        return new JSONObject().put("prebuiltVoiceConfig", new JSONObject().put("voiceName", voz));
+    }
+
+    /**
+     * Pide un bloque. Si la voz es de la biblioteca y Google la rechaza por la voz, cambia a las
+     * 30 voces de siempre para ese bloque y los siguientes, y lo deja anotado.
+     */
+    byte[] pedirConRespaldo(String clave, String modelo, String estilo, String texto,
+                            Audio.Conversacion conv, List<Audio.Conversacion.Turno> turnos,
+                            String[] voz, String[] respaldo) throws Exception {
+        try {
+            return pedirConReintentos(clave, modelo, voz[0], estilo, texto, conv, turnos);
+        } catch (Exception e) {
+            if (respaldo[0] == null) throw e;
+            int codigo = e instanceof ApiException ? ((ApiException) e).codigo : -1;
+            if (!Audio.Biblioteca.fallaPorVoz(codigo, e.getMessage())) throw e;
+            String motivo = e.getMessage() == null ? "" : e.getMessage();
+            voz[0] = respaldo[0];
+            if (conv != null) {
+                conv.voces[0] = respaldo[0];
+                conv.voces[1] = respaldo[1];
+            }
+            String usadas = conv != null ? respaldo[0] + " y " + respaldo[1] : respaldo[0];
+            respaldo[0] = null;
+            avisoVoz = " Aviso: la voz de la biblioteca no funcionó y se usó "
+                    + (conv != null ? "las voces " : "la voz ") + usadas + ", de las 30 de siempre.";
+            avisar("La voz de la biblioteca no funcionó. " + motivo + " Se usa "
+                    + (conv != null ? "las voces " : "la voz ") + usadas
+                    + ", de las 30 de siempre.");
+            return pedirConReintentos(clave, modelo, voz[0], estilo, texto, conv, turnos);
+        }
+    }
+
+    /** Descarga las voces en español, primero con filtro y, si no sirve, la lista completa. */
+    void cargarVocesBib() {
+        if (ocupado || perfeccionando) return;
+        final String clave = campoClave.getText().toString().trim();
+        if (clave.isEmpty()) {
+            rechazar("Falta la clave API. Escríbela o pégala en el primer campo.");
+            campoClave.requestFocus();
+            return;
+        }
+        ocupado = true;
+        cancelar = false;
+        botonConvertir.setEnabled(false);
+        botonCargarBib.setEnabled(false);
+        botonProbarBib.setEnabled(false);
+        decir("Cargando las voces en español de la biblioteca. Espera un momento.");
+        iniciarCarga();
+        new Thread(() -> {
+            String error = null;
+            List<Audio.Biblioteca.Voz> r = new ArrayList<>();
+            try {
+                try {
+                    r = descargarVoces(clave, true);
+                } catch (ApiException e) {
+                    if (e.codigo == 429 || e.codigo == 401 || e.codigo == 403) throw e;
+                }
+                if (r.isEmpty()) r = descargarVoces(clave, false);
+            } catch (Exception e) {
+                error = e.getMessage() == null ? e.toString() : e.getMessage();
+            }
+            final List<Audio.Biblioteca.Voz> voces = r;
+            final String falla = error;
+            ui.post(() -> {
+                ocupado = false;
+                detenerCarga();
+                botonConvertir.setEnabled(true);
+                botonCargarBib.setEnabled(true);
+                botonProbarBib.setEnabled(true);
+                if (falla != null || voces.isEmpty()) {
+                    sonar("aviso");
+                    decir("No se pudieron cargar las voces. "
+                            + (falla != null ? falla : "Google no devolvió voces en español.")
+                            + " Las 30 voces de siempre siguen funcionando.");
+                    return;
+                }
+                bibTodas = voces;
+                prefs.edit().putString("bib_voces", Audio.Biblioteca.serializar(voces)).apply();
+                llenarRegionesBib(regionBibElegida());
+                sonar("exito");
+                decir("Se cargaron " + voces.size() + " voces en español. Elige la región, el "
+                        + "género y la voz, y pulsa Probar la voz elegida de la biblioteca.");
+            });
+        }).start();
+    }
+
+    List<Audio.Biblioteca.Voz> descargarVoces(String clave, boolean filtrar) throws Exception {
+        List<Audio.Biblioteca.Voz> r = new ArrayList<>();
+        String token = "";
+        for (int pagina = 0; pagina < 8; pagina++) {
+            if (cancelar) throw new Exception(MSG_DETENIDA);
+            String url = BASE + "/voices?page_size=1000";
+            if (filtrar) url += "&language_code=es-419&language_code=es-ES";
+            if (!token.isEmpty()) url += "&page_token=" + java.net.URLEncoder.encode(token, "UTF-8");
+            JSONObject resp = new JSONObject(obtener(url, clave));
+            JSONArray lista = resp.optJSONArray("voices");
+            if (lista != null) {
+                for (int i = 0; i < lista.length(); i++) {
+                    JSONObject o = lista.optJSONObject(i);
+                    if (o == null) continue;
+                    JSONObject p = o.optJSONObject("prompted");
+                    String id = campoVoz(o, p, "id");
+                    String idioma = campoVoz(o, p, "language_code");
+                    if (id.isEmpty() || !Audio.Biblioteca.esEspanol(idioma, id)) continue;
+                    String acento = campoVoz(o, p, "accent");
+                    if (acento.isEmpty()) acento = campoVoz(o, p, "region_code");
+                    if (acento.isEmpty() && id.toLowerCase(Locale.ROOT).startsWith("es-es")) {
+                        acento = "castellano";
+                    }
+                    r.add(new Audio.Biblioteca.Voz(id, acento, campoVoz(o, p, "gender"),
+                            campoVoz(o, p, "pitch"), campoVoz(o, p, "persona"), idioma));
+                }
+            }
+            token = resp.optString("next_page_token", resp.optString("nextPageToken", ""));
+            if (token.isEmpty()) break;
+        }
+        return r;
+    }
+
+    /** Lee un campo de la voz, en la raíz o dentro de "prompted". */
+    static String campoVoz(JSONObject o, JSONObject p, String campo) {
+        String v = o.optString(campo, "");
+        if (v.isEmpty() && p != null) v = p.optString(campo, "");
+        return v;
+    }
+
+    String obtener(String direccion, String clave) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(direccion).openConnection();
+        c.setRequestMethod("GET");
+        c.setConnectTimeout(30000);
+        c.setReadTimeout(60000);
+        c.setRequestProperty("x-goog-api-key", clave);
+        int codigo = c.getResponseCode();
+        InputStream is = codigo >= 400 ? c.getErrorStream() : c.getInputStream();
+        String resp = leer(is);
+        c.disconnect();
+        if (codigo >= 400) throw new ApiException(codigo, mensajeError(resp, codigo), resp);
+        return resp;
+    }
+
+    /** Genera una frase corta con la voz elegida y la reproduce, sin guardar nada en Descargas. */
+    void probarVozBib() {
+        if (ocupado || perfeccionando) return;
+        final Audio.Biblioteca.Voz v = bibElegida();
+        if (v == null) {
+            rechazar("No hay una voz de la biblioteca elegida. Pulsa Cargar las voces en español "
+                    + "de la biblioteca y elige una.");
+            return;
+        }
+        final String clave = campoClave.getText().toString().trim();
+        if (clave.isEmpty()) {
+            rechazar("Falta la clave API. Escríbela o pégala en el primer campo.");
+            campoClave.requestFocus();
+            return;
+        }
+        final String modelo = (String) listaModelo.getSelectedItem();
+        final String estilo = campoEstilo.getText().toString().trim();
+        final String frase = "Hola, soy una voz de la biblioteca de Café Tecnológico. "
+                + "Así sueno cuando leo tus textos.";
+        guardarPrefs();
+        ocupado = true;
+        cancelar = false;
+        botonConvertir.setEnabled(false);
+        botonCargarBib.setEnabled(false);
+        botonProbarBib.setEnabled(false);
+        decir("Probando la voz " + nombreVoz(v.id) + ". Espera un momento.");
+        iniciarCarga();
+        new Thread(() -> {
+            String error = null;
+            File archivo = null;
+            try {
+                byte[] datos = pedirConReintentos(clave, modelo, v.id, estilo, frase, null, null);
+                List<Audio> partes = new ArrayList<>();
+                partes.add(Audio.desdeBytes(datos));
+                byte[] wav = Audio.unir(partes, PAUSA_ENTRE_BLOQUES_MS, SILENCIO_FINAL_MS);
+                archivo = new File(getCacheDir(), "prueba_voz_biblioteca.wav");
+                try (java.io.FileOutputStream fos = new java.io.FileOutputStream(archivo)) {
+                    fos.write(wav);
+                }
+            } catch (Exception e) {
+                error = e.getMessage() == null ? e.toString() : e.getMessage();
+            }
+            final String falla = error;
+            final File wavPrueba = archivo;
+            ui.post(() -> {
+                ocupado = false;
+                detenerCarga();
+                botonConvertir.setEnabled(true);
+                botonCargarBib.setEnabled(true);
+                botonProbarBib.setEnabled(true);
+                if (falla != null) {
+                    sonar("aviso");
+                    decir("La prueba de la voz falló. " + falla);
+                    return;
+                }
+                try {
+                    if (reproductor != null) {
+                        reproductor.release();
+                        reproductor = null;
+                    }
+                    MediaPlayer mp = new MediaPlayer();
+                    reproductor = mp;
+                    mp.setDataSource(wavPrueba.getAbsolutePath());
+                    mp.setOnCompletionListener(m -> {
+                        m.release();
+                        if (reproductor == m) reproductor = null;
+                        decir("Terminó la prueba de la voz.");
+                    });
+                    mp.prepare();
+                    mp.start();
+                    decir("Reproduciendo la voz " + nombreVoz(v.id) + ".");
+                } catch (Exception e) {
+                    reproductor = null;
+                    decir("No se pudo reproducir la prueba. " + e.getMessage());
+                }
+            });
+        }).start();
+    }
+
+
     // ---------- Google Gemini ----------
 
     byte[] pedirConReintentos(String clave, String modelo, String voz, String estilo, String texto,
@@ -1283,10 +1734,7 @@ public class MainActivity extends Activity {
         JSONObject contenido = new JSONObject();
         contenido.put("parts", new JSONArray().put(parte));
 
-        JSONObject prebuilt = new JSONObject();
-        prebuilt.put("voiceName", voz);
-        JSONObject vozCfg = new JSONObject();
-        vozCfg.put("prebuiltVoiceConfig", prebuilt);
+        JSONObject vozCfg = configVozGC(voz);
         JSONObject habla = new JSONObject();
         habla.put("voiceConfig", vozCfg);
         JSONObject gen = new JSONObject();
@@ -1422,10 +1870,9 @@ public class MainActivity extends Activity {
         }
         JSONArray configs = new JSONArray();
         for (int i = 0; i < 2; i++) {
-            JSONObject prebuilt = new JSONObject().put("voiceName", conv.voces[i]);
             configs.put(new JSONObject()
                     .put("speaker", Audio.Conversacion.IDS[i])
-                    .put("voiceConfig", new JSONObject().put("prebuiltVoiceConfig", prebuilt)));
+                    .put("voiceConfig", configVozGC(conv.voces[i])));
         }
         JSONObject habla = new JSONObject().put("multiSpeakerVoiceConfig",
                 new JSONObject().put("speakerVoiceConfigs", configs));

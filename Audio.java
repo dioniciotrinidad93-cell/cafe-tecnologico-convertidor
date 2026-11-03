@@ -376,6 +376,211 @@ final class Audio {
         }
     }
 
+    // ---------- Biblioteca de voces (función experimental, versión 1.6.0) ----------
+
+    /**
+     * Voces regionales en español de la biblioteca extendida de Google. Aquí solo hay lógica sin
+     * Android: etiquetas en español, filtros, guardado como texto y las decisiones de respaldo.
+     */
+    static final class Biblioteca {
+
+        static final String[] GENEROS_TEXTO = {"Todos los géneros", "Mujer", "Hombre", "Neutra"};
+        static final String[] GENEROS_CODIGO = {"", "female", "male", "neutral"};
+
+        private static final String[][] ROLES = {
+            {"advisor", "Asesor"},
+            {"assistant", "Asistente"},
+            {"commercial", "Comercial"},
+            {"concierge", "Conserje"},
+            {"csagent", "Atención al cliente"},
+            {"podcaster", "Podcaster"},
+            {"techagent", "Soporte técnico"},
+            {"training", "Instructor"},
+            {"tutor", "Tutor"},
+        };
+
+        static final class Voz {
+            final String id;
+            final String acento;
+            final String genero;
+            final String tono;
+            final String persona;
+            final String idioma;
+
+            Voz(String id, String acento, String genero, String tono, String persona,
+                String idioma) {
+                this.id = limpiar(id);
+                this.acento = limpiar(acento);
+                this.genero = limpiar(genero).toLowerCase(Locale.ROOT);
+                this.tono = limpiar(tono).toLowerCase(Locale.ROOT);
+                this.persona = limpiar(persona);
+                this.idioma = limpiar(idioma);
+            }
+
+            /** Descripción corta en español, para las listas y los avisos. */
+            String etiqueta() {
+                StringBuilder sb = new StringBuilder(rolDeId(id));
+                String g = generoEs(genero);
+                if (!g.isEmpty()) sb.append(", ").append(g);
+                String t = tonoEs(tono);
+                if (!t.isEmpty()) sb.append(", tono ").append(t);
+                return sb.toString();
+            }
+        }
+
+        /** Quita lo que rompe el guardado como texto: barras verticales y saltos de línea. */
+        static String limpiar(String s) {
+            if (s == null) return "";
+            return s.replace('|', ' ').replace('\n', ' ').replace('\r', ' ').trim();
+        }
+
+        static String generoEs(String genero) {
+            if ("female".equals(genero)) return "mujer";
+            if ("male".equals(genero)) return "hombre";
+            if ("neutral".equals(genero)) return "neutra";
+            return "";
+        }
+
+        static String tonoEs(String tono) {
+            if ("low".equals(tono)) return "grave";
+            if ("medium".equals(tono)) return "medio";
+            if ("high".equals(tono)) return "agudo";
+            return "";
+        }
+
+        /** Nombre del acento en español. Los que no conocemos se muestran como los da Google. */
+        static String nombreAcento(String acento) {
+            String a = acento == null ? "" : acento.toLowerCase(Locale.ROOT);
+            if (a.isEmpty()) return "Sin acento indicado";
+            if (a.contains("mexic")) return "México";
+            if (a.contains("argentin")) return "Argentina";
+            if (a.contains("castil") || a.contains("castel") || a.contains("spain")
+                    || a.equals("es")) return "España, castellano";
+            if (a.equals("mx")) return "México";
+            if (a.equals("ar")) return "Argentina";
+            return acento;
+        }
+
+        /** Verdadero si la voz es de español: idioma es, es-419, es-ES... */
+        static boolean esEspanol(String idioma, String id) {
+            String l = idioma == null ? "" : idioma.toLowerCase(Locale.ROOT).replace('_', '-');
+            if (l.equals("es") || l.startsWith("es-")) return true;
+            String i = id == null ? "" : id.toLowerCase(Locale.ROOT);
+            return l.isEmpty() && i.startsWith("es-");
+        }
+
+        /** De es-419-techagent-7 saca "Soporte técnico 7". Si no reconoce el formato, devuelve el id. */
+        static String rolDeId(String id) {
+            String[] p = id.split("-");
+            if (p.length < 3 || !p[p.length - 1].matches("\\d+")) return id;
+            String clave = p[p.length - 2].toLowerCase(Locale.ROOT);
+            String rol = null;
+            for (String[] r : ROLES) {
+                if (r[0].equals(clave)) rol = r[1];
+            }
+            if (rol == null) {
+                rol = clave.isEmpty() ? id : Character.toUpperCase(clave.charAt(0)) + clave.substring(1);
+            }
+            return rol + " " + p[p.length - 1];
+        }
+
+        static int numeroDeId(String id) {
+            String[] p = id.split("-");
+            String n = p[p.length - 1];
+            if (!n.matches("\\d{1,6}")) return 0;
+            return Integer.parseInt(n);
+        }
+
+        private static int comparar(Voz a, Voz b) {
+            int c = rolDeId(a.id).replaceAll("\\d+$", "").compareTo(rolDeId(b.id).replaceAll("\\d+$", ""));
+            if (c != 0) return c;
+            c = Integer.compare(numeroDeId(a.id), numeroDeId(b.id));
+            if (c != 0) return c;
+            return a.id.compareTo(b.id);
+        }
+
+        /** Voces con ese acento (vacío = todos) y ese género (vacío = todos), en orden estable. */
+        static List<Voz> filtrar(List<Voz> todas, String acento, String genero) {
+            List<Voz> r = new ArrayList<>();
+            for (Voz v : todas) {
+                if (!acento.isEmpty() && !v.acento.equals(acento)) continue;
+                if (!genero.isEmpty() && !v.genero.equals(genero)) continue;
+                r.add(v);
+            }
+            java.util.Collections.sort(r, (a, b) -> comparar(a, b));
+            return r;
+        }
+
+        /** Opciones de la lista de regiones: cada una es {acento tal como lo da Google, texto}. */
+        static List<String[]> regiones(List<Voz> todas) {
+            List<String[]> r = new ArrayList<>();
+            if (todas.isEmpty()) {
+                r.add(new String[] {"", "Aún no hay voces cargadas"});
+                return r;
+            }
+            Map<String, Integer> cuenta = new HashMap<>();
+            for (Voz v : todas) {
+                Integer n = cuenta.get(v.acento);
+                cuenta.put(v.acento, n == null ? 1 : n + 1);
+            }
+            List<String> acentos = new ArrayList<>(cuenta.keySet());
+            final Map<String, Integer> c = cuenta;
+            java.util.Collections.sort(acentos, (a, b) -> {
+                int d = c.get(b) - c.get(a);
+                return d != 0 ? d : a.compareTo(b);
+            });
+            r.add(new String[] {"", "Todas las regiones, " + todas.size() + " voces"});
+            for (String a : acentos) {
+                int n = c.get(a);
+                r.add(new String[] {a, nombreAcento(a) + ", " + n + (n == 1 ? " voz" : " voces")});
+            }
+            return r;
+        }
+
+        /** Voz de la biblioteca de distinto género y del mismo acento, o null si no hay. */
+        static Voz automatica(List<Voz> todas, Voz v) {
+            String buscado = "female".equals(v.genero) ? "male" : "female";
+            for (Voz o : filtrar(todas, v.acento, buscado)) {
+                if (!o.id.equals(v.id)) return o;
+            }
+            return null;
+        }
+
+        /** Guardado como texto: una voz por línea, con los campos separados por barras. */
+        static String serializar(List<Voz> voces) {
+            StringBuilder sb = new StringBuilder();
+            for (Voz v : voces) {
+                sb.append(v.id).append('|').append(v.acento).append('|').append(v.genero)
+                        .append('|').append(v.tono).append('|').append(v.persona).append('|')
+                        .append(v.idioma).append('\n');
+            }
+            return sb.toString();
+        }
+
+        static List<Voz> leer(String texto) {
+            List<Voz> r = new ArrayList<>();
+            if (texto == null) return r;
+            for (String linea : texto.split("\n")) {
+                String[] p = linea.split("\\|", -1);
+                if (p.length < 6 || p[0].trim().isEmpty()) continue;
+                r.add(new Voz(p[0], p[1], p[2], p[3], p[4], p[5]));
+            }
+            return r;
+        }
+
+        /**
+         * Decide si un error de Google se debe a la voz (y entonces conviene volver a las 30 voces)
+         * y no al límite de uso o a la conexión. codigo es el de Google, o -1 si no hay.
+         */
+        static boolean fallaPorVoz(int codigo, String mensaje) {
+            if (codigo == 400 || codigo == 403 || codigo == 404) return true;
+            if (codigo > 0) return false;
+            String m = mensaje == null ? "" : mensaje;
+            return m.startsWith("La primera forma de pedir el audio")
+                    || m.startsWith("Google no aceptó la conversación");
+        }
+    }
+
     // ---------- Señales sonoras (las mismas del complemento, WAV de 16 kHz en base64) ----------
 
     static final class Sonidos {
