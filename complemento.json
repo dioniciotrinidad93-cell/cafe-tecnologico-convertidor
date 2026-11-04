@@ -1,5 +1,5 @@
 {
-  "version": "0.9",
-  "novedades": "Formato MP3 al guardar y compartir.\nConversación con dos voces: escribe Nombre dos puntos al inicio de cada línea.\nEl cuadro de la clave dice si ya hay una clave guardada.\nAyuda más corta, con las novedades anteriores en un botón.",
-  "enlace": "https://raw.githubusercontent.com/dioniciotrinidad93-cell/cafe-tecnologico-convertidor/main/Convertidor_de_texto_a_voz_Cafe_Tecnologico_v0.9.ppk"
+  "version": "1.0",
+  "novedades": "Biblioteca de voces regionales en español, en prueba. Varias claves de API con cambio automático cuando una llega a su límite. Conteo de tokens y uso del día. Botón del canal de Telegram en Nuestros canales.",
+  "enlace": "https://raw.githubusercontent.com/dioniciotrinidad93-cell/cafe-tecnologico-convertidor/main/Convertidor_de_texto_a_voz_Cafe_Tecnologico_v1.0.ppk"
 }
