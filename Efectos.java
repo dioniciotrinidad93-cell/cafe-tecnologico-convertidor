@@ -1,6 +1,7 @@
 package com.cafetecnologico.convertidor;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
 import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -15,7 +16,8 @@ import java.util.regex.Pattern;
 
 /**
  * Efectos de sonido y pausas dentro del texto, igual que en el complemento de Jieshuo.
- * Etiquetas entre corchetes: [perro], [pausa 2]. Sin dependencias de Android.
+ * Etiquetas entre corchetes: [perro], [pausa 2], y los sonidos de ambiente y emociones, que se
+ * escriben con "sonido" y su nombre: [sonido lluvia 1]. Esos se descargan aparte (Ambientes).
  * Los datos de los efectos están en EfectosDatos.
  */
 final class Efectos {
@@ -173,18 +175,29 @@ final class Efectos {
     static final int EFECTO = 1;
     static final int PAUSA = 2;
     static final int VOZ = 3;
+    static final int SONIDO = 4;
 
     static final class Paso {
         final int tipo;
         final String texto;
         final Efecto efecto;
         final double segundos;
+        final Ambientes.Sonido sonido;
 
         Paso(int tipo, String texto, Efecto efecto, double segundos) {
             this.tipo = tipo;
             this.texto = texto;
             this.efecto = efecto;
             this.segundos = segundos;
+            this.sonido = null;
+        }
+
+        Paso(Ambientes.Sonido sonido) {
+            this.tipo = SONIDO;
+            this.texto = null;
+            this.efecto = null;
+            this.segundos = 0;
+            this.sonido = sonido;
         }
     }
 
@@ -217,6 +230,8 @@ final class Efectos {
         final List<String> desconocidas = new ArrayList<>();
         int bloquesVoz = 0;
         int efectos = 0;
+        /** De los efectos, cuántos son sonidos de ambiente y emociones. */
+        int sonidos = 0;
         int pausas = 0;
         /** Lo que se leerá en voz alta, sin las etiquetas reconocidas. */
         String hablado = "";
@@ -237,13 +252,18 @@ final class Efectos {
         while (m.find()) {
             String norm = normalizar(m.group(1));
             Efecto ef = BUSQUEDA.get(norm);
-            double seg = ef == null ? segundosDePausa(norm) : -1;
+            Ambientes.Sonido so = ef == null ? Ambientes.buscar(norm) : null;
+            double seg = (ef == null && so == null) ? segundosDePausa(norm) : -1;
             acumulado.append(texto, pos, m.start());
-            if (ef != null || seg > 0) {
+            if (ef != null || so != null || seg > 0) {
                 volcar(plan, acumulado, hablado, maxBytes);
                 if (ef != null) {
                     plan.pasos.add(new Paso(EFECTO, null, ef, 0));
                     plan.efectos++;
+                } else if (so != null) {
+                    plan.pasos.add(new Paso(so));
+                    plan.efectos++;
+                    plan.sonidos++;
                 } else {
                     plan.pasos.add(new Paso(PAUSA, null, null, seg));
                     plan.pausas++;
@@ -279,7 +299,8 @@ final class Efectos {
         StringBuffer sb = new StringBuffer();
         while (m.find()) {
             String norm = normalizar(m.group(1));
-            boolean valida = BUSQUEDA.containsKey(norm) || segundosDePausa(norm) > 0;
+            boolean valida = BUSQUEDA.containsKey(norm) || segundosDePausa(norm) > 0
+                    || Ambientes.buscar(norm) != null;
             m.appendReplacement(sb, Matcher.quoteReplacement(valida ? m.group() : ""));
         }
         m.appendTail(sb);
@@ -332,6 +353,15 @@ final class Efectos {
             anterior = EFECTO;
         }
 
+        /** Un sonido de ambiente o de emociones ya decodificado a 24 kHz, mono. */
+        void sonido(byte[] pcm24) {
+            byte[] pcm = pcm24;
+            if (hz != TASA) pcm = remuestrear(pcm, TASA, hz);
+            hueco(EFECTO);
+            salida.write(pcm, 0, pcm.length);
+            anterior = EFECTO;
+        }
+
         void pausa(double segundos) {
             hueco(PAUSA);
             byte[] s = Audio.silencio(hz, 1, (int) Math.round(segundos * 1000));
@@ -339,11 +369,20 @@ final class Efectos {
             anterior = PAUSA;
         }
 
-        byte[] terminar(int silencioFinalMs) {
+        byte[] terminar(int silencioFinalMs) throws Exception {
+            return terminar(silencioFinalMs, null, 0);
+        }
+
+        /** Con un fondo (archivo de Ambientes), lo mezcla debajo de todo el audio. */
+        byte[] terminar(int silencioFinalMs, File fondo, double nivel) throws Exception {
             if (anterior < 0) throw new IllegalArgumentException("No hay audio que unir.");
             byte[] fin = Audio.silencio(hz, 1, silencioFinalMs);
             salida.write(fin, 0, fin.length);
-            return Audio.aWav(salida.toByteArray(), hz, 1);
+            byte[] pcm = salida.toByteArray();
+            if (fondo != null) {
+                pcm = Ambientes.mezclarFondo(pcm, hz, Ambientes.decodificar(fondo, hz), nivel);
+            }
+            return Audio.aWav(pcm, hz, 1);
         }
     }
 

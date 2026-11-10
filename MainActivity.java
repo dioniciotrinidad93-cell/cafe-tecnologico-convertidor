@@ -25,6 +25,7 @@ import android.text.InputType;
 import android.util.Base64;
 import android.view.Gravity;
 import android.view.View;
+import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
@@ -189,7 +190,32 @@ public class MainActivity extends Activity {
     static final int NUM_VIAS_CONV = 5;
 
     static final String AYUDA_NOVEDADES =
-            "Novedades de la versión 1.7.0.\n\n"
+            "Novedades de la versión 1.8.0.\n\n"
+            + "Sonidos de ambiente y emociones. Hay 98 sonidos: lluvia y tormenta, parque y "
+            + "naturaleza, cafetería, oficina e interiores, noche y suspenso, felicidad, tristeza "
+            + "y calma, ficción y magia, y tren y viaje. No viajan dentro de la app, para que no "
+            + "pese. Abre el botón Sonidos de ambiente y emociones y, la primera vez, pulsa "
+            + "Descargar el paquete de sonidos, de unos 20 megas. Se hace una sola vez y después "
+            + "funcionan sin internet.\n\n"
+            + "Cómo se usan. Elige una categoría y pulsa un sonido para escucharlo; vuelve a "
+            + "pulsarlo para detenerlo. Mantén presionado un sonido, o con TalkBack doble toque y "
+            + "mantener, y elige: Usar de fondo del audio, o Insertar como efecto en el texto. "
+            + "Los sonidos de 8 segundos en adelante sirven de fondo. Los de hasta 30 segundos se "
+            + "pueden insertar como efecto con una etiqueta como [sonido lluvia 1]: la voz se "
+            + "detiene, suena el sonido y la voz continúa. Cuentan dentro del máximo de 60 "
+            + "efectos y pausas.\n\n"
+            + "Fondo. Suena debajo de toda la voz, se repite las veces que haga falta, entra y sale "
+            + "con un desvanecimiento y queda guardado dentro del audio, en cualquier formato. En "
+            + "la pantalla de sonidos puedes cambiar su volumen, bajo, medio o alto, y quitarlo. "
+            + "Se queda elegido hasta que lo quites. Con fondo, convertir tarda un poco más.\n\n"
+            + "Licencias. Hay un botón nuevo, Licencias, al final de la pantalla. Dice de dónde "
+            + "viene cada sonido, con qué licencia, y los créditos que algunas licencias piden. "
+            + "Puedes copiar el texto. Si necesitas liberar espacio, los sonidos descargados se "
+            + "pueden borrar desde la pantalla de sonidos.";
+
+    static final String AYUDA_ANTERIORES =
+            "Novedades anteriores. Aquí están las de las tres versiones previas.\n\n"
+            + "Novedades de la versión 1.7.0.\n"
             + "Efectos de sonido y pausas. Escribe una etiqueta entre corchetes dentro del texto, "
             + "por ejemplo: El perro del vecino [perro] no deja de ladrar. Al llegar a la etiqueta, "
             + "la voz se detiene, suena el efecto y la voz continúa. Para una pausa, escribe pausa "
@@ -210,10 +236,8 @@ public class MainActivity extends Activity {
             + "Deshacer el perfeccionamiento. Gasta una petición de tu clave.\n\n"
             + "Nuestros canales. Hay un botón nuevo, debajo de Buscar actualizaciones, con el canal "
             + "de YouTube de Café Tecnológico, la comunidad de WhatsApp y el canal de Telegram. Si "
-            + "el teléfono no puede abrir el enlace, lo copia para que lo pegues donde quieras.";
-
-    static final String AYUDA_ANTERIORES =
-            "Novedades anteriores. Aquí están las de las tres versiones previas.\n\n"
+            + "el teléfono no puede abrir el enlace, lo copia para que lo pegues donde quieras."
+            + "\n\n"
             + "Novedades de la versión 1.6.0.\n"
             + "Biblioteca de voces, función experimental, al final de la pantalla. Trae las voces "
             + "regionales en español de la biblioteca extendida de Google: México, Argentina y "
@@ -230,13 +254,7 @@ public class MainActivity extends Activity {
             + "uno. El segundo nombre usa el campo Segunda voz de la conversación. Avisos en voz "
             + "alta para lectores de pantalla al convertir y perfeccionar. Señales sonoras de "
             + "inicio, carga, éxito y aviso. Ayuda más corta, con las novedades de la versión "
-            + "actual. Corrección: si escribes .mp3 al final del nombre, ya no se repite.\n\n"
-            + "Novedades de la versión 1.4.0.\n"
-            + "MP3. El selector Formato del audio ahora tiene tres opciones: WAV, M4A y MP3. El MP3 "
-            + "se reproduce en casi cualquier aparato y pesa unas diez veces menos que el WAV. Se "
-            + "guarda en mono a 64 kilobits por segundo, que es suficiente para voz, y tarda un "
-            + "poco más en crearse. Si el teléfono no puede crearlo, la app avisa y guarda el "
-            + "audio en WAV.";
+            + "actual. Corrección: si escribes .mp3 al final del nombre, ya no se repite.";
 
     SharedPreferences prefs;
     EditText campoClave, campoEstilo, campoTexto, campoNombre;
@@ -256,6 +274,18 @@ public class MainActivity extends Activity {
     volatile String avisoVoz = "";
     volatile String avisoEfectos = "";
     MediaPlayer reproEfecto;
+
+    // Sonidos de ambiente y emociones (se descargan aparte, ver Ambientes)
+    Button botonSonidos, botonLicencias;
+    String fondoArchivo = "";
+    int fondoVolumen = 0;
+    MediaPlayer reproSonido;
+    String sonandoArchivo = "";
+    Rampa rampaSubida;
+    AlertDialog dialogoSonidos;
+    LinearLayout contenidoSonidos;
+    int categoriaVista = -1;
+    boolean descargandoSonidos = false;
 
     // Biblioteca de voces (experimental)
     CheckBox usarBib;
@@ -297,6 +327,9 @@ public class MainActivity extends Activity {
         super.onCreate(savedInstanceState);
         setTitle("Convertidor de texto a voz, Café Tecnológico");
         prefs = getSharedPreferences("cafe_tecnologico_convertidor", MODE_PRIVATE);
+        fondoArchivo = prefs.getString("fondo", "");
+        fondoVolumen = Math.max(0, Math.min(Ambientes.NOMBRES_VOLUMEN.length - 1,
+                prefs.getInt("fondo_vol", 0)));
 
         try {
             PackageInfo pi = getPackageManager().getPackageInfo(getPackageName(), 0);
@@ -397,6 +430,10 @@ public class MainActivity extends Activity {
         botonEfectos.setText("Efectos de sonido");
         raiz.addView(botonEfectos);
 
+        botonSonidos = new Button(this);
+        botonSonidos.setText("Sonidos de ambiente y emociones");
+        raiz.addView(botonSonidos);
+
         botonPerfeccionar = new Button(this);
         botonPerfeccionar.setText("Perfeccionar con IA");
         raiz.addView(botonPerfeccionar);
@@ -433,6 +470,10 @@ public class MainActivity extends Activity {
         botonCanales.setText("Nuestros canales");
         raiz.addView(botonCanales);
 
+        botonLicencias = new Button(this);
+        botonLicencias.setText("Licencias");
+        raiz.addView(botonLicencias);
+
         construirBiblioteca(raiz);
 
         estado = new TextView(this);
@@ -455,6 +496,8 @@ public class MainActivity extends Activity {
         botonExpresiones.setOnClickListener(v -> elegirExpresion());
         botonEfectos.setOnClickListener(v -> mostrarEfectos());
         botonCanales.setOnClickListener(v -> mostrarCanales());
+        botonSonidos.setOnClickListener(v -> mostrarSonidos());
+        botonLicencias.setOnClickListener(v -> mostrarLicencias());
         botonPerfeccionar.setOnClickListener(v -> elegirPerfeccion());
         botonDeshacer.setOnClickListener(v -> deshacerPerfeccion());
         botonBuscar.setOnClickListener(v -> {
@@ -493,6 +536,7 @@ public class MainActivity extends Activity {
         super.onPause();
         ui.removeCallbacks(cicloBorrador);
         detenerCarga();
+        detenerSonido(false);
         guardarPrefs();
     }
 
@@ -502,6 +546,7 @@ public class MainActivity extends Activity {
         cancelar = true;
         detenerCarga();
         detenerEfecto();
+        detenerSonido(false);
         if (reproductor != null) {
             reproductor.release();
             reproductor = null;
@@ -658,6 +703,8 @@ public class MainActivity extends Activity {
                 .putInt("bib_genero", Math.max(0, listaBibGenero.getSelectedItemPosition()))
                 .putString("bib_voz", bibVozId)
                 .putString("bib_voz2", bibVoz2Id)
+                .putString("fondo", fondoArchivo)
+                .putInt("fondo_vol", fondoVolumen)
                 .apply();
     }
 
@@ -744,6 +791,23 @@ public class MainActivity extends Activity {
                     + ". El máximo es " + MAX_ETIQUETAS + ". Conviértelo en partes.");
             return;
         }
+        // Sonidos de ambiente y emociones: tienen que estar descargados.
+        for (Efectos.Paso ps : plan.pasos) {
+            if (ps.tipo == Efectos.SONIDO && !Ambientes.disponible(this, ps.sonido)) {
+                rechazar("Usas el sonido " + ps.sonido.nombre + ", pero el paquete de sonidos no está "
+                        + "descargado. Abre Sonidos de ambiente y emociones y pulsa Descargar el "
+                        + "paquete de sonidos.");
+                return;
+            }
+        }
+        final Ambientes.Sonido fondo = fondoArchivo.isEmpty() ? null
+                : Ambientes.POR_ARCHIVO.get(fondoArchivo);
+        if (!fondoArchivo.isEmpty() && (fondo == null || !Ambientes.disponible(this, fondo))) {
+            rechazar("Tienes elegido un fondo de ambiente, pero no está descargado. Abre Sonidos de "
+                    + "ambiente y emociones y descarga el paquete, o quita el fondo.");
+            return;
+        }
+        final double nivelFondo = Ambientes.NIVELES_VOLUMEN[fondoVolumen];
 
         // Conversación con dos voces: "Nombre:" al inicio de cada línea, exactamente dos nombres.
         final Audio.Conversacion conv = plan.bloquesVoz > 0 ? Audio.Conversacion.detectar(texto) : null;
@@ -804,6 +868,11 @@ public class MainActivity extends Activity {
         } else if (plan.pausas > 0) {
             inicio += " Incluye " + plan.pausas + (plan.pausas == 1 ? " pausa." : " pausas.");
         }
+        if (fondo != null) {
+            inicio += " Con fondo de " + fondo.nombre + ", volumen "
+                    + Ambientes.NOMBRES_VOLUMEN[fondoVolumen] + ".";
+            avisoEfectos += " Con fondo de " + fondo.nombre + ".";
+        }
         if (!plan.desconocidas.isEmpty()) {
             inicio += " Ojo: no conozco la etiqueta " + String.join(", ", plan.desconocidas)
                     + ", así que se leerá como texto.";
@@ -819,6 +888,10 @@ public class MainActivity extends Activity {
                     if (cancelar) throw new Exception(MSG_DETENIDA);
                     if (paso.tipo == Efectos.EFECTO) {
                         montaje.efecto(paso.efecto);
+                        continue;
+                    }
+                    if (paso.tipo == Efectos.SONIDO) {
+                        montaje.sonido(Ambientes.paraEfecto(this, paso.sonido));
                         continue;
                     }
                     if (paso.tipo == Efectos.PAUSA) {
@@ -842,7 +915,9 @@ public class MainActivity extends Activity {
                     }
                     montaje.voz(Audio.desdeBytes(datos));
                 }
-                byte[] wav = montaje.terminar(SILENCIO_FINAL_MS);
+                if (fondo != null) avisar("Agregando el fondo de ambiente.");
+                byte[] wav = montaje.terminar(SILENCIO_FINAL_MS,
+                        fondo == null ? null : Ambientes.archivo(this, fondo), nivelFondo);
                 Uri u = guardar(wav, nombre, formato);
                 ui.post(() -> terminado(u, null));
             } catch (Exception e) {
@@ -1111,6 +1186,421 @@ public class MainActivity extends Activity {
                 .create();
         dialogo.setOnDismissListener(x -> detenerEfecto());
         dialogo.show();
+    }
+
+    // ---------- Sonidos de ambiente y emociones ----------
+
+    /** Sube o baja el volumen de un reproductor poco a poco, para que no entre ni salga de golpe. */
+    final class Rampa implements Runnable {
+        final MediaPlayer mp;
+        final float desde;
+        final float hasta;
+        final int pasos;
+        final Runnable alFinal;
+        int k = 0;
+        boolean cancelada = false;
+
+        Rampa(MediaPlayer mp, float desde, float hasta, int ms, Runnable alFinal) {
+            this.mp = mp;
+            this.desde = desde;
+            this.hasta = hasta;
+            this.pasos = Math.max(1, ms / 50);
+            this.alFinal = alFinal;
+        }
+
+        @Override
+        public void run() {
+            if (cancelada) return;
+            k++;
+            float v = desde + (hasta - desde) * k / pasos;
+            try {
+                mp.setVolume(v, v);
+            } catch (Exception liberado) {
+                return;
+            }
+            if (k < pasos) {
+                ui.postDelayed(this, 50);
+            } else if (alFinal != null) {
+                alFinal.run();
+            }
+        }
+    }
+
+    void liberarSonido(MediaPlayer mp) {
+        try {
+            mp.stop();
+        } catch (Exception ignorada) {
+            // ya estaba detenido
+        }
+        try {
+            mp.release();
+        } catch (Exception ignorada) {
+            // ya estaba liberado
+        }
+    }
+
+    /** Detiene el sonido de prueba. Con suave, baja el volumen en medio segundo antes. */
+    void detenerSonido(boolean suave) {
+        final MediaPlayer mp = reproSonido;
+        reproSonido = null;
+        sonandoArchivo = "";
+        if (rampaSubida != null) {
+            rampaSubida.cancelada = true;
+            rampaSubida = null;
+        }
+        if (mp == null) return;
+        if (suave) {
+            ui.post(new Rampa(mp, 1f, 0f, 500, () -> liberarSonido(mp)));
+        } else {
+            liberarSonido(mp);
+        }
+    }
+
+    void escucharSonido(final Ambientes.Sonido s) {
+        if (!Ambientes.disponible(this, s)) {
+            rechazar("El sonido " + s.nombre + " no está descargado. Vuelve a la lista de categorías "
+                    + "y pulsa Descargar el paquete de sonidos.");
+            return;
+        }
+        boolean eraEste = reproSonido != null && s.archivo.equals(sonandoArchivo);
+        detenerSonido(true);
+        if (eraEste) {
+            decir("Detenido.");
+            return;
+        }
+        try {
+            MediaPlayer mp = new MediaPlayer();
+            mp.setDataSource(Ambientes.archivo(this, s).getAbsolutePath());
+            mp.setLooping(s.fondo);
+            mp.prepare();
+            mp.setVolume(0f, 0f);
+            mp.setOnCompletionListener(m -> {
+                if (reproSonido == m) {
+                    reproSonido = null;
+                    sonandoArchivo = "";
+                }
+                m.release();
+            });
+            reproSonido = mp;
+            sonandoArchivo = s.archivo;
+            mp.start();
+            rampaSubida = new Rampa(mp, 0f, 1f, 800, null);
+            ui.post(rampaSubida);
+            decir("Escuchando " + s.nombre + ", " + s.duracion() + "."
+                    + (s.fondo ? " Se repite hasta que lo detengas. Vuelve a pulsarlo para detenerlo."
+                    : ""));
+        } catch (Exception e) {
+            reproSonido = null;
+            sonandoArchivo = "";
+            decir("No se pudo reproducir el sonido " + s.nombre + ". " + e.getMessage());
+        }
+    }
+
+    void usarDeFondo(Ambientes.Sonido s) {
+        fondoArchivo = s.archivo;
+        guardarPrefs();
+        decir("Fondo elegido: " + s.nombre + ", con volumen " + Ambientes.NOMBRES_VOLUMEN[fondoVolumen]
+                + ". Sonará debajo de la voz en los audios que conviertas, con desvanecimiento al "
+                + "empezar y al terminar, hasta que lo quites. Con fondo, convertir tarda un poco más.");
+        llenarSonidos(false);
+    }
+
+    void insertarSonido(Ambientes.Sonido s) {
+        Editable ed = campoTexto.getText();
+        int pos = campoTexto.getSelectionStart();
+        if (pos < 0 || pos > ed.length()) pos = ed.length();
+        String marca = "[" + s.etiqueta + "]";
+        ed.insert(pos, marca);
+        campoTexto.setSelection(Math.min(pos + marca.length(), campoTexto.getText().length()));
+        String m = "Se insertó la etiqueta " + s.etiqueta + " en el texto.";
+        decir(m);
+        Toast.makeText(this, m, Toast.LENGTH_SHORT).show();
+    }
+
+    void opcionesSonido(final Ambientes.Sonido s) {
+        if (!Ambientes.disponible(this, s)) {
+            escucharSonido(s);
+            return;
+        }
+        final List<String> textos = new ArrayList<>();
+        final List<Integer> codigos = new ArrayList<>();
+        textos.add("Escuchar o detener");
+        codigos.add(0);
+        if (s.fondo) {
+            textos.add("Usar de fondo del audio");
+            codigos.add(1);
+        }
+        if (s.efecto) {
+            textos.add("Insertar como efecto en el texto");
+            codigos.add(2);
+        }
+        new AlertDialog.Builder(this)
+                .setTitle(s.nombre)
+                .setItems(textos.toArray(new String[0]), (d, cual) -> {
+                    int c = codigos.get(cual);
+                    if (c == 0) escucharSonido(s);
+                    else if (c == 1) usarDeFondo(s);
+                    else insertarSonido(s);
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    void mostrarSonidos() {
+        int p = dp(12);
+        ScrollView sv = new ScrollView(this);
+        contenidoSonidos = new LinearLayout(this);
+        contenidoSonidos.setOrientation(LinearLayout.VERTICAL);
+        contenidoSonidos.setPadding(p, p, p, p);
+        sv.addView(contenidoSonidos);
+        categoriaVista = -1;
+        llenarSonidos(false);
+        dialogoSonidos = new AlertDialog.Builder(this)
+                .setTitle("Sonidos de ambiente y emociones")
+                .setView(sv)
+                .setPositiveButton("Cerrar", null)
+                .create();
+        dialogoSonidos.setOnDismissListener(x -> {
+            detenerSonido(false);
+            dialogoSonidos = null;
+            contenidoSonidos = null;
+        });
+        dialogoSonidos.show();
+    }
+
+    /** Dibuja la pantalla de sonidos: la lista de categorías, o los sonidos de una categoría. */
+    void llenarSonidos(boolean enfocar) {
+        final LinearLayout l = contenidoSonidos;
+        if (l == null) return;
+        l.removeAllViews();
+        final int total = Ambientes.TODOS.size();
+        final int hay = Ambientes.cuantosDisponibles(this);
+
+        final TextView cabecera = new TextView(this);
+        cabecera.setTextSize(16);
+        cabecera.setFocusable(true);
+        l.addView(cabecera);
+
+        if (categoriaVista < 0) {
+            String uso = "Elige una categoría. Pulsa un sonido para escucharlo. Mantenlo presionado, "
+                    + "o con TalkBack doble toque y mantener, para usarlo de fondo del audio o "
+                    + "insertarlo como efecto en el texto.";
+            if (hay == 0) {
+                cabecera.setText("Hay " + total + " sonidos de ambiente y emociones. No viajan dentro "
+                        + "de la app, para que no pese: descarga el paquete una sola vez, de unos "
+                        + Ambientes.MEGAS_PAQUETE + " megas, y después funcionan sin internet.");
+            } else if (hay < total) {
+                cabecera.setText("Hay " + hay + " de " + total + " sonidos descargados. Faltan "
+                        + (total - hay) + ": vuelve a descargar el paquete. " + uso);
+            } else {
+                cabecera.setText("Hay " + total + " sonidos descargados. " + uso);
+            }
+            if (hay < total) {
+                Button b = new Button(this);
+                b.setAllCaps(false);
+                if (descargandoSonidos) {
+                    b.setText("Descargando el paquete de sonidos. Espera un momento.");
+                    b.setEnabled(false);
+                } else {
+                    b.setText("Descargar el paquete de sonidos, unos " + Ambientes.MEGAS_PAQUETE
+                            + " megas");
+                }
+                b.setOnClickListener(v -> descargarPaquete());
+                l.addView(b);
+            }
+            for (int i = 0; i < Ambientes.CATEGORIAS.length; i++) {
+                final int cat = i;
+                int n = Ambientes.deCategoria(i).size();
+                Button b = new Button(this);
+                b.setAllCaps(false);
+                b.setText(Ambientes.CATEGORIAS[i] + ". " + n + (n == 1 ? " sonido" : " sonidos"));
+                b.setOnClickListener(v -> {
+                    categoriaVista = cat;
+                    llenarSonidos(true);
+                });
+                l.addView(b);
+            }
+
+            TextView h = new TextView(this);
+            h.setText("Fondo del audio");
+            h.setTextSize(20);
+            h.setAccessibilityHeading(true);
+            h.setPadding(0, dp(16), 0, 0);
+            l.addView(h);
+            Ambientes.Sonido fondo = fondoArchivo.isEmpty() ? null
+                    : Ambientes.POR_ARCHIVO.get(fondoArchivo);
+            if (fondo == null) {
+                TextView t = new TextView(this);
+                t.setTextSize(16);
+                t.setText("Fondo del audio: ninguno. Para elegir uno, abre una categoría, mantén "
+                        + "presionado un sonido y elige Usar de fondo del audio.");
+                t.setFocusable(true);
+                l.addView(t);
+            } else {
+                Button b = new Button(this);
+                b.setAllCaps(false);
+                b.setText("Fondo del audio: " + fondo.nombre + ". Pulsa para quitarlo.");
+                b.setOnClickListener(v -> {
+                    fondoArchivo = "";
+                    guardarPrefs();
+                    decir("Fondo quitado. Los próximos audios no llevarán fondo.");
+                    llenarSonidos(false);
+                });
+                l.addView(b);
+            }
+            final Button vol = new Button(this);
+            vol.setAllCaps(false);
+            vol.setText("Volumen del fondo: " + Ambientes.NOMBRES_VOLUMEN[fondoVolumen]
+                    + ". Pulsa para cambiarlo.");
+            vol.setOnClickListener(v -> {
+                fondoVolumen = (fondoVolumen + 1) % Ambientes.NOMBRES_VOLUMEN.length;
+                guardarPrefs();
+                String nombre = Ambientes.NOMBRES_VOLUMEN[fondoVolumen];
+                vol.setText("Volumen del fondo: " + nombre + ". Pulsa para cambiarlo.");
+                decir("Volumen del fondo: " + nombre + ".");
+            });
+            l.addView(vol);
+
+            if (hay > 0) {
+                Button b = new Button(this);
+                b.setAllCaps(false);
+                b.setText("Borrar los sonidos descargados");
+                b.setOnClickListener(v -> confirmarBorrarSonidos());
+                l.addView(b);
+            }
+        } else {
+            cabecera.setText(Ambientes.CATEGORIAS[categoriaVista] + ". Pulsa un sonido para "
+                    + "escucharlo; vuelve a pulsarlo para detenerlo. Mantenlo presionado para usarlo "
+                    + "de fondo o insertarlo en el texto.");
+            cabecera.setAccessibilityHeading(true);
+            Button volver = new Button(this);
+            volver.setAllCaps(false);
+            volver.setText("Volver a las categorías");
+            volver.setOnClickListener(v -> {
+                detenerSonido(true);
+                categoriaVista = -1;
+                llenarSonidos(true);
+            });
+            l.addView(volver);
+            for (final Ambientes.Sonido s : Ambientes.deCategoria(categoriaVista)) {
+                Button b = new Button(this);
+                b.setAllCaps(false);
+                b.setText(s.nombre + ", " + s.duracion()
+                        + (Ambientes.disponible(this, s) ? "" : ". Sin descargar")
+                        + (s.archivo.equals(fondoArchivo) ? ". Es el fondo actual" : ""));
+                b.setOnClickListener(v -> escucharSonido(s));
+                b.setOnLongClickListener(v -> {
+                    opcionesSonido(s);
+                    return true;
+                });
+                b.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+                    @Override
+                    public void onInitializeAccessibilityNodeInfo(View host,
+                                                                  AccessibilityNodeInfo info) {
+                        super.onInitializeAccessibilityNodeInfo(host, info);
+                        info.addAction(new AccessibilityNodeInfo.AccessibilityAction(
+                                AccessibilityNodeInfo.ACTION_CLICK, "Escuchar el sonido"));
+                        info.addAction(new AccessibilityNodeInfo.AccessibilityAction(
+                                AccessibilityNodeInfo.ACTION_LONG_CLICK,
+                                "Ver opciones: usar de fondo o insertar en el texto"));
+                    }
+                });
+                l.addView(b);
+            }
+        }
+        if (enfocar) {
+            cabecera.post(() -> cabecera.sendAccessibilityEvent(
+                    AccessibilityEvent.TYPE_VIEW_FOCUSED));
+        }
+    }
+
+    void descargarPaquete() {
+        if (descargandoSonidos) return;
+        descargandoSonidos = true;
+        llenarSonidos(false);
+        decir("Descargando el paquete de sonidos, unos " + Ambientes.MEGAS_PAQUETE + " megas. Te aviso "
+                + "al llegar al 25, al 50 y al 75 por ciento. No cierres la app.");
+        new Thread(() -> {
+            final int[] ultimo = {0};
+            try {
+                int n = Ambientes.descargar(this, pct -> {
+                    int real = Math.min(100, pct * 100 / 90);
+                    int marca = real >= 75 ? 75 : real >= 50 ? 50 : real >= 25 ? 25 : 0;
+                    if (marca > ultimo[0]) {
+                        ultimo[0] = marca;
+                        avisar("Descargando los sonidos, " + marca + " por ciento.");
+                    }
+                });
+                ui.post(() -> terminarDescarga(n, null));
+            } catch (Exception e) {
+                String m = e.getMessage() == null ? e.toString() : e.getMessage();
+                ui.post(() -> terminarDescarga(0, m));
+            }
+        }).start();
+    }
+
+    void terminarDescarga(int n, String error) {
+        descargandoSonidos = false;
+        int total = Ambientes.TODOS.size();
+        if (error != null) {
+            sonar("aviso");
+            decir("No se pudo descargar el paquete de sonidos. " + error);
+        } else if (n >= total) {
+            sonar("exito");
+            decir("Listo. Se descargaron los " + total + " sonidos. Ya funcionan sin internet.");
+        } else {
+            sonar("aviso");
+            decir("Se descargaron " + n + " de " + total + " sonidos. Faltan " + (total - n)
+                    + ". Vuelve a descargar el paquete; si sigue igual, avísale a Dionisio.");
+        }
+        llenarSonidos(false);
+    }
+
+    void confirmarBorrarSonidos() {
+        new AlertDialog.Builder(this)
+                .setTitle("Borrar los sonidos")
+                .setMessage("Se borrarán los sonidos descargados y se liberarán unos "
+                        + Ambientes.MEGAS_PAQUETE + " megas. Si tienes un fondo elegido, se quita. "
+                        + "Podrás volver a descargarlos cuando quieras. ¿Quieres continuar?")
+                .setPositiveButton("Sí, borrar", (d, w) -> {
+                    detenerSonido(false);
+                    Ambientes.borrarTodo(this);
+                    fondoArchivo = "";
+                    guardarPrefs();
+                    decir("Sonidos borrados. Se liberó el espacio.");
+                    llenarSonidos(false);
+                })
+                .setNegativeButton("Cancelar", null)
+                .show();
+    }
+
+    // ---------- Licencias ----------
+
+    void mostrarLicencias() {
+        int p = dp(16);
+        ScrollView sv = new ScrollView(this);
+        TextView t = new TextView(this);
+        t.setText(Licencias.TEXTO);
+        t.setTextSize(16);
+        t.setTextIsSelectable(true);
+        t.setPadding(p, p, p, p);
+        sv.addView(t);
+        final AlertDialog d = new AlertDialog.Builder(this)
+                .setTitle("Licencias")
+                .setView(sv)
+                .setPositiveButton("Cerrar", null)
+                .setNeutralButton("Copiar el texto", null)
+                .create();
+        d.show();
+        d.getButton(AlertDialog.BUTTON_NEUTRAL).setOnClickListener(v -> {
+            try {
+                ClipboardManager cm = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                cm.setPrimaryClip(ClipData.newPlainText("licencias", Licencias.TEXTO));
+                decir("Texto de las licencias copiado al portapapeles.");
+            } catch (Exception e) {
+                decir("No se pudo copiar el texto.");
+            }
+        });
     }
 
     // ---------- Nuestros canales ----------
