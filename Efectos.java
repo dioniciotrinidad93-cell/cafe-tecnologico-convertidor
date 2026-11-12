@@ -16,8 +16,11 @@ import java.util.regex.Pattern;
 
 /**
  * Efectos de sonido y pausas dentro del texto, igual que en el complemento de Jieshuo.
- * Etiquetas entre corchetes: [perro], [pausa 2], y los sonidos de ambiente y emociones, que se
- * escriben con "sonido" y su nombre: [sonido lluvia 1]. Esos se descargan aparte (Ambientes).
+ * Etiquetas entre corchetes: [perro], [pausa 2], y los sonidos de ambiente, emociones y música,
+ * que se escriben con "sonido" y su nombre: [sonido lluvia 1]. Esos se descargan aparte
+ * (Ambientes), y también pueden ser sonidos que la persona subió.
+ * Para cambiar el fondo en medio del audio, con un fundido cruzado, se escribe "fondo" y el
+ * nombre del sonido: [fondo lluvia 1]; y [sin fondo] lo quita desde ese punto.
  * Los datos de los efectos están en EfectosDatos.
  */
 final class Efectos {
@@ -176,6 +179,7 @@ final class Efectos {
     static final int PAUSA = 2;
     static final int VOZ = 3;
     static final int SONIDO = 4;
+    static final int FONDO = 5;
 
     static final class Paso {
         final int tipo;
@@ -193,11 +197,20 @@ final class Efectos {
         }
 
         Paso(Ambientes.Sonido sonido) {
-            this.tipo = SONIDO;
+            this(SONIDO, sonido);
+        }
+
+        private Paso(int tipo, Ambientes.Sonido sonido) {
+            this.tipo = tipo;
             this.texto = null;
             this.efecto = null;
             this.segundos = 0;
             this.sonido = sonido;
+        }
+
+        /** Un cambio de fondo; con sonido null, el fondo se quita desde ese punto. */
+        static Paso fondo(Ambientes.Sonido sonido) {
+            return new Paso(FONDO, sonido);
         }
     }
 
@@ -232,6 +245,8 @@ final class Efectos {
         int efectos = 0;
         /** De los efectos, cuántos son sonidos de ambiente y emociones. */
         int sonidos = 0;
+        /** Cuántas veces cambia el fondo (o se quita) en medio del audio. */
+        int fondos = 0;
         int pausas = 0;
         /** Lo que se leerá en voz alta, sin las etiquetas reconocidas. */
         String hablado = "";
@@ -243,6 +258,14 @@ final class Efectos {
      * de como máximo maxBytes bytes.
      */
     static Plan planear(String texto, int maxBytes) {
+        return planear(texto, maxBytes, false);
+    }
+
+    /**
+     * Igual, pero con sistema en verdadero el texto se prepara para una voz del teléfono: se quitan
+     * las expresiones entre llaves y las caras, que solo entiende Gemini.
+     */
+    static Plan planear(String texto, int maxBytes, boolean sistema) {
         Plan plan = new Plan();
         Set<String> vistas = new LinkedHashSet<>();
         StringBuilder acumulado = new StringBuilder();
@@ -253,10 +276,14 @@ final class Efectos {
             String norm = normalizar(m.group(1));
             Efecto ef = BUSQUEDA.get(norm);
             Ambientes.Sonido so = ef == null ? Ambientes.buscar(norm) : null;
-            double seg = (ef == null && so == null) ? segundosDePausa(norm) : -1;
+            boolean sinFondo = ef == null && so == null && Ambientes.esQuitarFondo(norm);
+            Ambientes.Sonido fo = (ef == null && so == null && !sinFondo)
+                    ? Ambientes.buscarFondo(norm) : null;
+            double seg = (ef == null && so == null && !sinFondo && fo == null)
+                    ? segundosDePausa(norm) : -1;
             acumulado.append(texto, pos, m.start());
-            if (ef != null || so != null || seg > 0) {
-                volcar(plan, acumulado, hablado, maxBytes);
+            if (ef != null || so != null || sinFondo || fo != null || seg > 0) {
+                volcar(plan, acumulado, hablado, maxBytes, sistema);
                 if (ef != null) {
                     plan.pasos.add(new Paso(EFECTO, null, ef, 0));
                     plan.efectos++;
@@ -264,6 +291,12 @@ final class Efectos {
                     plan.pasos.add(new Paso(so));
                     plan.efectos++;
                     plan.sonidos++;
+                } else if (sinFondo) {
+                    plan.pasos.add(Paso.fondo(null));
+                    plan.fondos++;
+                } else if (fo != null) {
+                    plan.pasos.add(Paso.fondo(fo));
+                    plan.fondos++;
                 } else {
                     plan.pasos.add(new Paso(PAUSA, null, null, seg));
                     plan.pausas++;
@@ -275,19 +308,20 @@ final class Efectos {
             pos = m.end();
         }
         acumulado.append(texto.substring(pos));
-        volcar(plan, acumulado, hablado, maxBytes);
+        volcar(plan, acumulado, hablado, maxBytes, sistema);
         plan.desconocidas.addAll(vistas);
         plan.hablado = hablado.toString();
         return plan;
     }
 
     private static void volcar(Plan plan, StringBuilder acumulado, StringBuilder hablado,
-                               int maxBytes) {
+                               int maxBytes, boolean sistema) {
         String s = acumulado.toString();
         acumulado.setLength(0);
         if (s.trim().isEmpty()) return;
         hablado.append(s);
-        for (String b : Audio.dividir(MainActivity.paraVoz(s), maxBytes)) {
+        String listo = sistema ? MainActivity.paraVozSistema(s) : MainActivity.paraVoz(s);
+        for (String b : Audio.dividir(listo, maxBytes)) {
             plan.pasos.add(new Paso(VOZ, b, null, 0));
             plan.bloquesVoz++;
         }
@@ -300,7 +334,8 @@ final class Efectos {
         while (m.find()) {
             String norm = normalizar(m.group(1));
             boolean valida = BUSQUEDA.containsKey(norm) || segundosDePausa(norm) > 0
-                    || Ambientes.buscar(norm) != null;
+                    || Ambientes.buscar(norm) != null || Ambientes.esQuitarFondo(norm)
+                    || Ambientes.buscarFondo(norm) != null;
             m.appendReplacement(sb, Matcher.quoteReplacement(valida ? m.group() : ""));
         }
         m.appendTail(sb);
@@ -323,6 +358,7 @@ final class Efectos {
         private int hz = TASA;
         private boolean hzFijado = false;
         private int anterior = -1;
+        private final List<Ambientes.TramoFondo> tramos = new ArrayList<>();
 
         private void hueco(int siguiente) {
             if (anterior < 0) return;
@@ -362,6 +398,15 @@ final class Efectos {
             anterior = EFECTO;
         }
 
+        /**
+         * Desde este punto el fondo cambia al archivo dado, con un fundido cruzado: el anterior baja
+         * y el nuevo sube a la vez, sin pausar la voz. Con null, el fondo se quita. No agrega audio:
+         * el cambio se aplica al final, al mezclar.
+         */
+        void fondo(File archivo) {
+            tramos.add(new Ambientes.TramoFondo(salida.size() / 2.0 / hz, archivo));
+        }
+
         void pausa(double segundos) {
             hueco(PAUSA);
             byte[] s = Audio.silencio(hz, 1, (int) Math.round(segundos * 1000));
@@ -373,14 +418,20 @@ final class Efectos {
             return terminar(silencioFinalMs, null, 0);
         }
 
-        /** Con un fondo (archivo de Ambientes), lo mezcla debajo de todo el audio. */
+        /**
+         * Con un fondo (archivo de Ambientes), lo mezcla debajo de todo el audio; y si hubo cambios
+         * de fondo con fondo(), los aplica en su lugar.
+         */
         byte[] terminar(int silencioFinalMs, File fondo, double nivel) throws Exception {
             if (anterior < 0) throw new IllegalArgumentException("No hay audio que unir.");
             byte[] fin = Audio.silencio(hz, 1, silencioFinalMs);
             salida.write(fin, 0, fin.length);
             byte[] pcm = salida.toByteArray();
-            if (fondo != null) {
-                pcm = Ambientes.mezclarFondo(pcm, hz, Ambientes.decodificar(fondo, hz), nivel);
+            if (fondo != null || !tramos.isEmpty()) {
+                List<Ambientes.TramoFondo> todos = new ArrayList<>();
+                if (fondo != null) todos.add(new Ambientes.TramoFondo(0, fondo));
+                todos.addAll(tramos);
+                pcm = Ambientes.mezclarFondos(pcm, hz, todos, nivel);
             }
             return Audio.aWav(pcm, hz, 1);
         }

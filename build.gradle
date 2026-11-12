@@ -10,8 +10,8 @@ android {
         applicationId 'com.cafetecnologico.convertidor'
         minSdk 29
         targetSdk 34
-        versionCode 12
-        versionName '1.8.0'
+        versionCode 13
+        versionName '1.9.0'
     }
 
     sourceSets {
@@ -20,6 +20,14 @@ android {
             // librería MP3 (allowBackup y label). El flujo de compilación aún escribe otro en
             // src/main, pero se ignora.
             manifest.srcFile 'AndroidManifest.xml'
+        }
+        // Manifiesto adicional: permite a la app ver qué motores de texto a voz hay instalados
+        // (Android 11 en adelante lo exige). Se fusiona con el manifiesto principal.
+        release {
+            manifest.srcFile 'AndroidManifest-motores.xml'
+        }
+        debug {
+            manifest.srcFile 'AndroidManifest-motores.xml'
         }
     }
 
