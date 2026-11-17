@@ -22,6 +22,7 @@ import android.os.Looper;
 import android.provider.MediaStore;
 import android.text.Editable;
 import android.text.InputType;
+import android.text.TextWatcher;
 import android.util.Base64;
 import android.view.Gravity;
 import android.view.View;
@@ -190,7 +191,24 @@ public class MainActivity extends Activity {
     static final int NUM_VIAS_CONV = 5;
 
     static final String AYUDA_NOVEDADES =
-            "Novedades de la versión 1.9.0.\n\n"
+            "Novedades de la versión 1.10.0.\n\n"
+            + "Clave API guardada. Cuando hay una clave en el cuadro, la etiqueta que está encima "
+            + "dice: Clave guardada. Toca el cuadro para cambiarla o borrarla. La clave se guarda "
+            + "en cuanto la escribes o la pegas; no hay un botón de guardar. Si el cuadro está "
+            + "vacío, la etiqueta no dice nada más.\n\n"
+            + "Conversaciones con más de dos voces. Escribe cada intervención en una línea que "
+            + "empiece con el nombre y dos puntos, como Ana: o Carlos:. Ahora puedes usar hasta "
+            + "seis nombres distintos. Cada nombre tiene su voz fija: el primero usa la voz "
+            + "principal, el segundo la segunda voz, y del tercero en adelante la app asigna otras "
+            + "de las 30 voces, sin repetir. Antes de convertir, la app dice qué voz usa cada "
+            + "nombre. Google solo admite dos voces por petición, así que con más de dos nombres "
+            + "el audio se pide por tramos y se une: tarda más y gasta más cupo de tu clave. Con "
+            + "las voces del teléfono, del tercer nombre en adelante las voces se distinguen "
+            + "cambiando el tono.";
+
+    static final String AYUDA_ANTERIORES =
+            "Novedades anteriores. Aquí están las de las tres versiones previas.\n\n"
+            + "Novedades de la versión 1.9.0.\n"
             + "Voces del teléfono. Debajo de la clave API hay una lista nueva, Motor de voz. La "
             + "primera opción es Gemini, como siempre. Las demás son los motores de texto a voz que "
             + "tengas instalados en el teléfono. Al elegir uno, aparecen el idioma, la voz, una "
@@ -213,10 +231,8 @@ public class MainActivity extends Activity {
             + "Música clásica. Hay ocho piezas de piano de dominio público o con licencia libre, "
             + "para usar de fondo: Claro de luna, Patética, Nocturno, Gota de lluvia, Sonata fácil, "
             + "Impromptu, Aria Goldberg y Gimnopedia. Se descargan aparte, unos 19 megas, desde la "
-            + "pantalla de sonidos. Los créditos están en Licencias.";
-
-    static final String AYUDA_ANTERIORES =
-            "Novedades anteriores. Aquí están las de las tres versiones previas.\n\n"
+            + "pantalla de sonidos. Los créditos están en Licencias."
+            + "\n\n"
             + "Novedades de la versión 1.8.0.\n"
             + "Sonidos de ambiente y emociones. Hay 98 sonidos que se descargan una sola vez, unos "
             + "20 megas, desde el botón Sonidos de ambiente y emociones. Pulsa un sonido para "
@@ -245,21 +261,11 @@ public class MainActivity extends Activity {
             + "Deshacer el perfeccionamiento. Gasta una petición de tu clave.\n\n"
             + "Nuestros canales. Hay un botón nuevo, debajo de Buscar actualizaciones, con el canal "
             + "de YouTube de Café Tecnológico, la comunidad de WhatsApp y el canal de Telegram. Si "
-            + "el teléfono no puede abrir el enlace, lo copia para que lo pegues donde quieras."
-            + "\n\n"
-            + "Novedades de la versión 1.6.0.\n"
-            + "Biblioteca de voces, función experimental, al final de la pantalla. Trae las voces "
-            + "regionales en español de la biblioteca extendida de Google: México, Argentina y "
-            + "España. Pulsa Cargar las voces en español de la biblioteca, con tu clave escrita; "
-            + "elige la región, el género y la voz; pulsa Probar la voz elegida para escucharla "
-            + "sin guardar nada, y marca la casilla Usar la voz de la biblioteca al convertir. "
-            + "Todo lo demás funciona igual con estas voces, incluida la conversación con dos "
-            + "voces. Si una voz de la biblioteca falla, la app cambia sola a una de las 30 voces "
-            + "de siempre, del mismo género, y lo avisa. Es una función en prueba: Google puede "
-            + "cambiar o retirar la biblioteca.";
+            + "el teléfono no puede abrir el enlace, lo copia para que lo pegues donde quieras.";
 
     SharedPreferences prefs;
     EditText campoClave, campoEstilo, campoTexto, campoNombre;
+    TextView etiquetaClave;
     Spinner listaModelo, listaVoz, listaVoz2, listaFormato;
     // Voces del teléfono (motores de texto a voz instalados)
     Spinner listaMotor, listaSisIdioma, listaSisVoz, listaSisVoz2, listaSisVel, listaSisTono;
@@ -383,7 +389,25 @@ public class MainActivity extends Activity {
                 | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         campoClave.setSingleLine(true);
         campoClave.setText(prefs.getString("clave", ""));
-        agregar(raiz, "Clave API de Google Gemini", campoClave);
+        etiquetaClave = agregar(raiz, ETIQUETA_CLAVE, campoClave);
+        actualizarEtiquetaClave();
+        // La clave se guarda en cuanto se escribe o se pega, y la etiqueta lo dice. Si el cuadro
+        // queda vacío, la etiqueta no dice nada más.
+        campoClave.addTextChangedListener(new TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int inicio, int cuenta, int despues) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int inicio, int antes, int cuenta) {
+            }
+
+            @Override
+            public void afterTextChanged(Editable e) {
+                prefs.edit().putString("clave", e.toString().trim()).apply();
+                actualizarEtiquetaClave();
+            }
+        });
 
         listaMotor = new Spinner(this);
         motoresSis = VocesSistema.motores(this);
@@ -415,7 +439,7 @@ public class MainActivity extends Activity {
         listaVoz2 = new Spinner(this);
         listaVoz2.setAdapter(adaptador(ETIQUETAS_VOZ2));
         listaVoz2.setSelection(posicionVoz2(prefs.getString("voz2", "")));
-        agregar(contGemini, "Segunda voz de la conversación, solo si escribes un diálogo con dos nombres",
+        agregar(contGemini, "Segunda voz de la conversación, solo si escribes un diálogo con nombres",
                 listaVoz2);
 
         campoEstilo = new EditText(this);
@@ -610,7 +634,7 @@ public class MainActivity extends Activity {
         return (int) (v * getResources().getDisplayMetrics().density);
     }
 
-    void agregar(LinearLayout raiz, String etiqueta, View campo) {
+    TextView agregar(LinearLayout raiz, String etiqueta, View campo) {
         TextView t = new TextView(this);
         t.setText(etiqueta);
         t.setTextSize(16);
@@ -619,6 +643,18 @@ public class MainActivity extends Activity {
         t.setLabelFor(campo.getId());
         raiz.addView(t);
         raiz.addView(campo);
+        return t;
+    }
+
+    static final String ETIQUETA_CLAVE = "Clave API de Google Gemini";
+
+    /** Con una clave en el cuadro, la etiqueta dice que está guardada; sin clave, no dice nada más. */
+    void actualizarEtiquetaClave() {
+        if (etiquetaClave == null) return;
+        boolean hay = !campoClave.getText().toString().trim().isEmpty();
+        etiquetaClave.setText(hay
+                ? ETIQUETA_CLAVE + ". Clave guardada. Toca el cuadro para cambiarla o borrarla."
+                : ETIQUETA_CLAVE);
     }
 
     ArrayAdapter<String> adaptador(String[] datos) {
@@ -799,14 +835,33 @@ public class MainActivity extends Activity {
         }
         Audio.Conversacion conv = bloques > 0 ? Audio.Conversacion.detectar(t) : null;
         if (conv != null) {
-            m += " Detecté una conversación entre " + conv.nombres[0] + " y " + conv.nombres[1]
-                    + ". Se convertirá con dos voces.";
+            m += " Detecté una conversación entre " + entre(conv.nombres) + ". Se convertirá con "
+                    + numeroVoces(conv.nombres.length) + " voces.";
+            if (conv.nombres.length > 2) {
+                m += " Con más de dos voces, Google necesita varias peticiones, así que tarda más y "
+                        + "gasta más cupo de tu clave.";
+            }
         }
         decir(m);
     }
 
     void avisar(String m) {
         ui.post(() -> decir(m));
+    }
+
+    /** "Ana y Luis", "Ana, Luis y Carlos". */
+    static String entre(String[] nombres) {
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < nombres.length; i++) {
+            if (i > 0) sb.append(i == nombres.length - 1 ? " y " : ", ");
+            sb.append(nombres[i]);
+        }
+        return sb.toString();
+    }
+
+    static String numeroVoces(int n) {
+        String[] t = {"dos", "tres", "cuatro", "cinco", "seis"};
+        return n >= 2 && n - 2 < t.length ? t[n - 2] : String.valueOf(n);
     }
 
     // ---------- Conversión ----------
@@ -906,7 +961,7 @@ public class MainActivity extends Activity {
         }
         final double nivelFondo = Ambientes.NIVELES_VOLUMEN[fondoVolumen];
 
-        // Conversación con dos voces: "Nombre:" al inicio de cada línea, exactamente dos nombres.
+        // Conversación: "Nombre:" al inicio de cada línea, de dos a seis nombres.
         final Audio.Conversacion conv = plan.bloquesVoz > 0 ? Audio.Conversacion.detectar(texto) : null;
         boolean mismaVoz = false;
         if (conv != null && !sistema) {
@@ -926,6 +981,7 @@ public class MainActivity extends Activity {
             }
             conv.voces[0] = voz;
             conv.voces[1] = voz2;
+            conv.completarVoces();
         }
         // Si la voz de la biblioteca falla, se vuelve a las 30 voces de siempre.
         final String[] vozActual = {voz};
@@ -934,6 +990,7 @@ public class MainActivity extends Activity {
             respaldo[0] = vozDeRespaldo(vozBib);
             respaldo[1] = Audio.Conversacion.vozAutomatica(respaldo[0]);
         }
+        final String respaldo0 = respaldo[0];
         avisoVoz = "";
 
         ocupado = true;
@@ -945,15 +1002,22 @@ public class MainActivity extends Activity {
         if (sistema) {
             inicio += " Con las voces del teléfono, motor " + motorSis.etiqueta + ".";
             if (conv != null) {
-                inicio += " Conversación entre " + conv.nombres[0] + " y " + conv.nombres[1]
-                        + ", con dos voces.";
+                inicio += " Conversación entre " + entre(conv.nombres) + ", con "
+                        + numeroVoces(conv.nombres.length) + " voces."
+                        + (conv.nombres.length > 2 ? " Desde la tercera, las voces se distinguen "
+                            + "cambiando el tono." : "");
             }
         } else if (conv != null) {
-            inicio += " Conversación entre " + conv.nombres[0] + " y " + conv.nombres[1] + ". "
-                    + conv.nombres[0] + " usa la voz " + nombreVoz(conv.voces[0]) + " y "
-                    + conv.nombres[1] + " usa la voz " + nombreVoz(conv.voces[1]) + "."
-                    + (mismaVoz ? " Elegiste la misma voz para los dos, así que la segunda es "
-                        + "automática." : "");
+            StringBuilder usos = new StringBuilder();
+            for (int i = 0; i < conv.nombres.length; i++) {
+                if (i > 0) usos.append(i == conv.nombres.length - 1 ? " y " : ", ");
+                usos.append(conv.nombres[i]).append(" usa la voz ").append(nombreVoz(conv.voces[i]));
+            }
+            inicio += " Conversación entre " + entre(conv.nombres) + ". " + usos + "."
+                    + (mismaVoz ? " Elegiste la misma voz para los dos primeros, así que la "
+                        + "segunda es automática." : "")
+                    + (conv.nombres.length > 2 ? " Con más de dos voces el audio se pide por "
+                        + "tramos, así que tarda más y gasta más cupo." : "");
         }
         if (plan.bloquesVoz > 1) inicio += " Se convertirá en " + plan.bloquesVoz + " bloques.";
         avisoEfectos = "";
@@ -1030,8 +1094,25 @@ public class MainActivity extends Activity {
                     if (conv != null) {
                         List<Audio.Conversacion.Turno> turnos = conv.turnos(paso.texto);
                         if (turnos.isEmpty()) continue;
-                        datos = pedirConRespaldo(clave, modelo, estilo, paso.texto,
-                                conv, turnos, vozActual, respaldo);
+                        if (conv.nombres.length <= 2) {
+                            datos = pedirConRespaldo(clave, modelo, estilo, paso.texto,
+                                    conv, turnos, vozActual, respaldo);
+                        } else {
+                            // Google admite dos voces por petición: se pide por tramos y se unen.
+                            List<Audio> partes = new ArrayList<>();
+                            for (List<Audio.Conversacion.Turno> grupo : conv.grupos(turnos)) {
+                                if (cancelar) throw new Exception(MSG_DETENIDA);
+                                if (respaldo0 != null && respaldo0.equals(vozActual[0])) {
+                                    conv.voces[0] = respaldo0;
+                                    conv.voces[1] = Audio.Conversacion.vozAutomatica(respaldo0);
+                                    conv.completarVoces();
+                                }
+                                Audio.Conversacion.Tramo tr = conv.pareja(grupo);
+                                partes.add(Audio.desdeBytes(pedirConRespaldo(clave, modelo, estilo,
+                                        paso.texto, tr.conv, tr.turnos, vozActual, respaldo)));
+                            }
+                            datos = Audio.unir(partes, 350, 0);
+                        }
                         conv.hablante = conv.ultimoDe(turnos);
                     } else {
                         datos = pedirConRespaldo(clave, modelo, estilo, paso.texto,
@@ -1319,15 +1400,20 @@ public class MainActivity extends Activity {
         float tono = 1f;
         int actual = 0;
 
+        /**
+         * Hablantes 1 y 2: sus voces. Del tercero en adelante se alternan las mismas dos voces
+         * con otro tono: más agudo el tercero y el cuarto, más grave el quinto y el sexto.
+         */
         void poner(VocesSistema.Sintetizador s, int hablante) throws Exception {
-            int h = hablante == 2 ? 2 : 1;
+            int h = Math.max(1, Math.min(hablante, Audio.Conversacion.MAX_HABLANTES));
             if (actual == h) return;
             actual = h;
-            if (h == 2 && (voz2.isEmpty() || voz2.equals(voz1))) {
-                s.configurar(idioma, voz1, vel, Math.max(0.5f, tono * 0.8f));
-            } else {
-                s.configurar(idioma, h == 2 ? voz2 : voz1, vel, tono);
-            }
+            boolean par = h % 2 == 0;
+            boolean sinSegunda = voz2.isEmpty() || voz2.equals(voz1);
+            String v = par && !sinSegunda ? voz2 : voz1;
+            float t = par && sinSegunda ? Math.max(0.5f, tono * 0.8f) : tono;
+            if (h >= 3) t = Math.max(0.5f, Math.min(2f, t * (h <= 4 ? 1.25f : 0.7f)));
+            s.configurar(idioma, v, vel, t);
         }
     }
 

@@ -231,13 +231,21 @@ final class Audio {
     // ---------- Conversación con dos voces ----------
 
     /**
-     * Conversación entre dos personas. El texto escribe cada intervención en una línea que
-     * empieza con "Nombre:" y debe haber exactamente dos nombres distintos. Los nombres reales
-     * no se leen: a Google se le mandan como "Locutor 1" y "Locutor 2".
+     * Conversación entre dos o más personas (hasta seis). El texto escribe cada intervención en
+     * una línea que empieza con "Nombre:". Los nombres reales no se leen: a Google se le mandan
+     * como "Locutor 1" y "Locutor 2", y como solo admite dos voces por petición, una conversación
+     * de más de dos nombres se pide por tramos con, como máximo, dos hablantes cada uno.
      */
     static final class Conversacion {
 
         static final String[] IDS = {"Locutor 1", "Locutor 2"};
+
+        static final int MAX_HABLANTES = 6;
+
+        /** Voces para los hablantes del tercero en adelante: se toma la primera que no se haya usado. */
+        static final String[] EXTRAS = {
+            "Puck", "Leda", "Fenrir", "Aoede", "Orus", "Despina", "Enceladus", "Callirrhoe"
+        };
 
         static final String[] FEMENINAS = {
             "Kore", "Zephyr", "Leda", "Aoede", "Callirrhoe", "Autonoe", "Despina", "Erinome",
@@ -247,7 +255,7 @@ final class Audio {
         private static final Pattern LINEA =
                 Pattern.compile("^\\s*([\\p{L}\\p{N}][\\p{L}\\p{N} .'\\-]*):(.*)$");
 
-        /** Una intervención: h es 1 o 2 (primer o segundo nombre) y t su texto. */
+        /** Una intervención: h es el número del nombre (1 es el primero) y t su texto. */
         static final class Turno {
             final int h;
             String t;
@@ -260,14 +268,83 @@ final class Audio {
 
         final String[] nombres;
         final Map<String, Integer> claves;
-        /** Voces de los dos hablantes; las llena quien convierte. */
-        final String[] voces = new String[2];
+        /** Voz de cada hablante; las dos primeras las llena quien convierte y el resto, completarVoces. */
+        final String[] voces;
         /** Quién hablaba al final del bloque anterior, por si un bloque empieza sin nombre. */
         int hablante = 1;
 
         private Conversacion(String[] nombres, Map<String, Integer> claves) {
             this.nombres = nombres;
             this.claves = claves;
+            this.voces = new String[Math.max(2, nombres.length)];
+        }
+
+        /** Da una voz fija a cada hablante desde el tercero, sin repetir ninguna ya usada. */
+        void completarVoces() {
+            for (int i = 2; i < nombres.length; i++) {
+                String elegida = null;
+                for (String c : EXTRAS) {
+                    boolean usada = false;
+                    for (int j = 0; j < i; j++) {
+                        if (c.equals(voces[j])) usada = true;
+                    }
+                    if (!usada) {
+                        elegida = c;
+                        break;
+                    }
+                }
+                voces[i] = elegida != null ? elegida : EXTRAS[i % EXTRAS.length];
+            }
+        }
+
+        /** Un tramo de la conversación con solo dos hablantes, numerados 1 y 2, y sus voces. */
+        static final class Tramo {
+            final Conversacion conv;
+            final List<Turno> turnos;
+
+            Tramo(Conversacion conv, List<Turno> turnos) {
+                this.conv = conv;
+                this.turnos = turnos;
+            }
+        }
+
+        /**
+         * Parte las intervenciones en grupos seguidos con, como máximo, dos hablantes distintos,
+         * porque Google solo admite dos voces por petición.
+         */
+        List<List<Turno>> grupos(List<Turno> turnos) {
+            List<List<Turno>> r = new ArrayList<>();
+            List<Turno> actual = new ArrayList<>();
+            List<Integer> vistos = new ArrayList<>();
+            for (Turno t : turnos) {
+                if (!vistos.contains(t.h) && vistos.size() == 2) {
+                    r.add(actual);
+                    actual = new ArrayList<>();
+                    vistos.clear();
+                }
+                if (!vistos.contains(t.h)) vistos.add(t.h);
+                actual.add(t);
+            }
+            if (!actual.isEmpty()) r.add(actual);
+            return r;
+        }
+
+        /** Convierte un grupo de intervenciones en una petición de dos voces, con las voces actuales. */
+        Tramo pareja(List<Turno> grupo) {
+            List<Integer> hs = new ArrayList<>();
+            for (Turno t : grupo) {
+                if (!hs.contains(t.h)) hs.add(t.h);
+            }
+            int a = hs.get(0);
+            int b = hs.size() > 1 ? hs.get(1) : 0;
+            Conversacion par = new Conversacion(
+                    new String[] {nombres[a - 1], b > 0 ? nombres[b - 1] : ""},
+                    new HashMap<String, Integer>());
+            par.voces[0] = voces[a - 1];
+            par.voces[1] = b > 0 ? voces[b - 1] : vozAutomatica(voces[a - 1]);
+            List<Turno> nuevos = new ArrayList<>();
+            for (Turno t : grupo) nuevos.add(new Turno(t.h == a ? 1 : 2, t.t));
+            return new Tramo(par, nuevos);
         }
 
         static boolean esFemenina(String voz) {
@@ -308,7 +385,7 @@ final class Audio {
             return new String[] {n, resto.trim()};
         }
 
-        /** Devuelve la conversación si el texto empieza con "Nombre:" y tiene dos nombres; si no, null. */
+        /** Devuelve la conversación si el texto empieza con "Nombre:" y tiene de dos a seis nombres; si no, null. */
         static Conversacion detectar(String texto) {
             String t = texto == null ? "" : texto.replace("\r", "");
             t = t.replaceAll("\\[[^\\]]*\\]", "").replaceAll("\\{[^}]*\\}", "");
@@ -325,14 +402,14 @@ final class Audio {
                     total++;
                     String k = normalizar(nl[0]);
                     if (!claves.containsKey(k)) {
-                        if (nombres.size() >= 2) return null;
+                        if (nombres.size() >= MAX_HABLANTES) return null;
                         nombres.add(nl[0]);
                         claves.put(k, nombres.size());
                     }
                 }
             }
-            if (nombres.size() == 2 && total >= 2) {
-                return new Conversacion(new String[] {nombres.get(0), nombres.get(1)}, claves);
+            if (nombres.size() >= 2 && total >= 2) {
+                return new Conversacion(nombres.toArray(new String[0]), claves);
             }
             return null;
         }
