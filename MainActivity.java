@@ -6,7 +6,9 @@ import android.content.ContentResolver;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.ContentValues;
+import android.content.Context;
 import android.content.Intent;
+import android.content.res.Configuration;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
 import android.database.Cursor;
@@ -25,6 +27,8 @@ import android.text.InputType;
 import android.text.TextWatcher;
 import android.util.Base64;
 import android.view.Gravity;
+import android.view.ViewGroup;
+import android.graphics.Typeface;
 import android.view.View;
 import android.view.accessibility.AccessibilityEvent;
 import android.view.accessibility.AccessibilityNodeInfo;
@@ -175,23 +179,70 @@ public class MainActivity extends Activity {
         "Vindemiatrix", "Sadachbia", "Sadaltager", "Sulafat"
     };
 
-    /** Opciones de la segunda voz: la primera es automática; luego las 30 voces con su género. */
+    /** Cómo suena cada una de las 30 voces, en el mismo orden que VOCES (igual que el complemento). */
+    static final String[] RASGOS_VOZ = {
+        "profesional y clara", "juvenil y enérgica", "profunda y serena", "cálida y natural",
+        "potente y resonante", "juvenil", "firme", "fresca y ligera",
+        "relajada", "brillante", "suave y susurrante", "clara",
+        "tranquila", "suave", "suave", "clara",
+        "grave y áspera", "informativa", "animada", "suave",
+        "firme", "uniforme y equilibrada", "madura", "directa y expresiva",
+        "amistosa", "casual", "amable", "vivaz",
+        "de tono erudito", "cálida"
+    };
+
+    /** Las 30 voces con género y rasgo: "Kore, voz femenina, cálida y natural". */
+    static final String[] ETIQUETAS_VOZ = crearEtiquetasVoz();
+
+    static String[] crearEtiquetasVoz() {
+        String[] r = new String[VOCES.length];
+        for (int i = 0; i < VOCES.length; i++) {
+            r[i] = VOCES[i] + (Audio.Conversacion.esFemenina(VOCES[i])
+                    ? ", voz femenina, " : ", voz masculina, ") + RASGOS_VOZ[i];
+        }
+        return r;
+    }
+
+    /** Opciones de la segunda voz: la primera es automática; luego las 30 voces con su descripción. */
     static final String[] ETIQUETAS_VOZ2 = crearEtiquetasVoz2();
 
     static String[] crearEtiquetasVoz2() {
         String[] r = new String[VOCES.length + 1];
         r[0] = "Automática, de distinto género que la primera";
-        for (int i = 0; i < VOCES.length; i++) {
-            r[i + 1] = VOCES[i] + (Audio.Conversacion.esFemenina(VOCES[i])
-                    ? ", voz femenina" : ", voz masculina");
-        }
+        for (int i = 0; i < VOCES.length; i++) r[i + 1] = ETIQUETAS_VOZ[i];
         return r;
     }
+
+    static final String[] TEMAS = {"Automático, igual que el teléfono", "Claro", "Oscuro"};
 
     static final int NUM_VIAS_CONV = 5;
 
     static final String AYUDA_NOVEDADES =
-            "Novedades de la versión 1.10.0.\n\n"
+            "Novedades de la versión 1.11.0.\n\n"
+            + "Pantalla más sencilla. Arriba quedan solo lo esencial: el texto, el botón Convertir "
+            + "a audio y el estado. Todo lo demás está en secciones que se abren y se cierran con "
+            + "un toque: Voz y estilo; Herramientas, con expresiones, efectos, sonidos y "
+            + "Perfeccionar con IA; Nombre y formato del audio; Clave API; Biblioteca de voces; y "
+            + "Tema, actualizaciones, canales y licencias. Cada sección es un encabezado, así que "
+            + "con el lector de pantalla puedes saltar de una a otra. La app recuerda cuáles dejaste "
+            + "abiertas. Los botones Detener, Reproducir, Compartir y Deshacer solo aparecen cuando "
+            + "sirven. No se quitó ninguna función. La sección de la clave API se queda cerrada "
+            + "cuando ya hay una clave guardada, y se abre sola si falta.\n\n"
+            + "Tema oscuro. En la última sección, la lista Tema de la pantalla tiene tres "
+            + "opciones: Automático, que sigue al teléfono; Claro; y Oscuro. Al cambiarla, la "
+            + "pantalla se dibuja de nuevo y la app lo anuncia.\n\n"
+            + "Descripción de las 30 voces. En las listas Voz y Segunda voz, cada voz dice su "
+            + "género y cómo suena, igual que en el complemento de Jieshuo. Por ejemplo: Kore, voz "
+            + "femenina, cálida y natural.\n\n"
+            + "Muestra de cada voz. Debajo de Voz y de Segunda voz hay un botón para escuchar una "
+            + "muestra de la voz elegida. Se genera con tu clave y gasta una petición, pero se "
+            + "guarda en el teléfono: la próxima vez que la escuches no gasta nada ni necesita "
+            + "internet. Si pulsas el botón mientras suena, se detiene. Con la segunda voz en "
+            + "Automática no hay muestra, porque se elige sola.";
+
+    static final String AYUDA_ANTERIORES =
+            "Novedades anteriores. Aquí están las de las tres versiones previas.\n\n"
+            + "Novedades de la versión 1.10.0.\n"
             + "Clave API guardada. Cuando hay una clave en el cuadro, la etiqueta que está encima "
             + "dice: Clave guardada. Toca el cuadro para cambiarla o borrarla. La clave se guarda "
             + "en cuanto la escribes o la pegas; no hay un botón de guardar. Si el cuadro está "
@@ -204,10 +255,8 @@ public class MainActivity extends Activity {
             + "nombre. Google solo admite dos voces por petición, así que con más de dos nombres "
             + "el audio se pide por tramos y se une: tarda más y gasta más cupo de tu clave. Con "
             + "las voces del teléfono, del tercer nombre en adelante las voces se distinguen "
-            + "cambiando el tono.";
-
-    static final String AYUDA_ANTERIORES =
-            "Novedades anteriores. Aquí están las de las tres versiones previas.\n\n"
+            + "cambiando el tono."
+            + "\n\n"
             + "Novedades de la versión 1.9.0.\n"
             + "Voces del teléfono. Debajo de la clave API hay una lista nueva, Motor de voz. La "
             + "primera opción es Gemini, como siempre. Las demás son los motores de texto a voz que "
@@ -239,31 +288,14 @@ public class MainActivity extends Activity {
             + "escucharlo; mantenlo presionado para usarlo de fondo del audio o insertarlo como "
             + "efecto con una etiqueta como [sonido lluvia 1]. El fondo suena debajo de toda la "
             + "voz, con volumen bajo, medio o alto. El botón Licencias dice de dónde viene cada "
-            + "sonido.\n\n"
-            + "Novedades de la versión 1.7.0.\n"
-            + "Efectos de sonido y pausas. Escribe una etiqueta entre corchetes dentro del texto, "
-            + "por ejemplo: El perro del vecino [perro] no deja de ladrar. Al llegar a la etiqueta, "
-            + "la voz se detiene, suena el efecto y la voz continúa. Para una pausa, escribe pausa "
-            + "y los segundos, de uno a diez, por ejemplo [pausa 2]. Hay 133 efectos de animales, "
-            + "agua, objetos y ambiente, personas y humor, y acción. Viajan dentro de la app, así "
-            + "que no gastan el cupo de tu clave. Si solo escribes efectos y pausas, sin texto, "
-            + "tampoco hace falta la clave. Si escribes una etiqueta que no existe, la app avisa "
-            + "antes de convertir y la lee como texto. El máximo es de 60 efectos y pausas por audio. "
-            + "Funcionan igual con una conversación de dos voces, con las voces de la biblioteca y "
-            + "con cualquier formato de audio.\n\n"
-            + "Botón Efectos de sonido. Está junto a Expresiones de voz y abre la lista por "
-            + "categorías. Pulsa un efecto para escucharlo. Mantenlo presionado para insertar su "
-            + "etiqueta donde esté el cursor; con TalkBack, es doble toque y mantener. La lista se "
-            + "queda abierta para que pruebes e insertes varios. Pulsa Cerrar para volver.\n\n"
-            + "Sugerir efectos de sonido con IA. En Perfeccionar con IA hay una opción nueva. Pone "
-            + "etiquetas de efectos donde encajan, solo de los que existen en la app, y no cambia "
-            + "tus palabras. Después puedes revisar el texto y quitar las que no quieras, o pulsar "
-            + "Deshacer el perfeccionamiento. Gasta una petición de tu clave.\n\n"
-            + "Nuestros canales. Hay un botón nuevo, debajo de Buscar actualizaciones, con el canal "
-            + "de YouTube de Café Tecnológico, la comunidad de WhatsApp y el canal de Telegram. Si "
-            + "el teléfono no puede abrir el enlace, lo copia para que lo pegues donde quieras.";
+            + "sonido.";
 
     SharedPreferences prefs;
+    ScrollView pantalla;
+    Seccion secClave, secAjustes;
+    Spinner listaTema;
+    Button botonMuestra, botonMuestra2;
+    MediaPlayer muestraActual;
     EditText campoClave, campoEstilo, campoTexto, campoNombre;
     TextView etiquetaClave;
     Spinner listaModelo, listaVoz, listaVoz2, listaFormato;
@@ -344,9 +376,13 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        prefs = getSharedPreferences("cafe_tecnologico_convertidor", MODE_PRIVATE);
+        // El tema se elige antes de crear ninguna vista, para que todo (listas, cuadros de
+        // diálogo, ventanas de ayuda) salga en claro o en oscuro.
+        setTheme(temaOscuro() ? android.R.style.Theme_DeviceDefault
+                : android.R.style.Theme_DeviceDefault_Light);
         super.onCreate(savedInstanceState);
         setTitle("Convertidor de texto a voz, Café Tecnológico");
-        prefs = getSharedPreferences("cafe_tecnologico_convertidor", MODE_PRIVATE);
         Ambientes.cargarPropios(this);
         fondoArchivo = prefs.getString("fondo", "");
         fondoVolumen = Math.max(0, Math.min(Ambientes.NOMBRES_VOLUMEN.length - 1,
@@ -361,13 +397,14 @@ public class MainActivity extends Activity {
         }
 
         int p = dp(16);
-        ScrollView sv = new ScrollView(this);
-        sv.setFillViewport(true);
+        pantalla = new ScrollView(this);
+        pantalla.setFillViewport(true);
         LinearLayout raiz = new LinearLayout(this);
         raiz.setOrientation(LinearLayout.VERTICAL);
         raiz.setPadding(p, p, p, p);
-        sv.addView(raiz);
+        pantalla.addView(raiz);
 
+        // ---- Lo esencial, siempre a la vista: título, ayuda, texto, convertir y estado ----
         TextView titulo = new TextView(this);
         titulo.setText("Convertidor de texto a voz. Versión " + nombreVersion);
         titulo.setTextSize(22);
@@ -383,13 +420,158 @@ public class MainActivity extends Activity {
         botonAyuda.setText("Ayuda: novedades de esta versión");
         raiz.addView(botonAyuda);
 
+        campoTexto = new EditText(this);
+        campoTexto.setInputType(InputType.TYPE_CLASS_TEXT
+                | InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        campoTexto.setMinLines(6);
+        campoTexto.setGravity(Gravity.TOP | Gravity.START);
+        campoTexto.setText(prefs.getString("borrador", ""));
+        agregar(raiz, "Texto que quieres convertir en audio", campoTexto);
+
+        botonConvertir = new Button(this);
+        botonConvertir.setText("Convertir a audio");
+        raiz.addView(botonConvertir);
+
+        // Detener, Reproducir, Compartir y Deshacer solo aparecen cuando sirven.
+        botonDetener = new BotonOculto(this);
+        botonDetener.setText("Detener la conversión");
+        botonDetener.setEnabled(false);
+        raiz.addView(botonDetener);
+
+        estado = new TextView(this);
+        estado.setTextSize(16);
+        estado.setTextIsSelectable(true);
+        estado.setText("Listo. Escribe el texto y pulsa Convertir a audio.");
+        estado.setPadding(0, dp(8), 0, dp(8));
+        raiz.addView(estado);
+
+        botonReproducir = new BotonOculto(this);
+        botonReproducir.setText("Reproducir o detener el último audio");
+        botonReproducir.setEnabled(false);
+        raiz.addView(botonReproducir);
+
+        botonCompartir = new BotonOculto(this);
+        botonCompartir.setText("Compartir el último audio");
+        botonCompartir.setEnabled(false);
+        raiz.addView(botonCompartir);
+
+        // ---- Secciones que se abren y se cierran ----
+        final boolean sinClave = prefs.getString("clave", "").trim().isEmpty();
+
+        // Voz y estilo
+        Seccion secVoz = nuevaSeccion(raiz, "voz", "Voz y estilo", false);
+
+        listaMotor = new Spinner(this);
+        motoresSis = VocesSistema.motores(this);
+        String[] nombresMotor = new String[motoresSis.size() + 1];
+        nombresMotor[0] = "Gemini, en línea, con tu clave API";
+        String motorGuardado = prefs.getString("motor", "");
+        int selMotor = 0;
+        for (int i = 0; i < motoresSis.size(); i++) {
+            nombresMotor[i + 1] = "Voces del teléfono: " + motoresSis.get(i).etiqueta;
+            if (motoresSis.get(i).paquete.equals(motorGuardado)) selMotor = i + 1;
+        }
+        listaMotor.setAdapter(adaptador(nombresMotor));
+        listaMotor.setSelection(selMotor);
+        agregar(secVoz.cuerpo, "Motor de voz", listaMotor);
+
+        contGemini = new LinearLayout(this);
+        contGemini.setOrientation(LinearLayout.VERTICAL);
+
+        listaModelo = new Spinner(this);
+        listaModelo.setAdapter(adaptador(MODELOS));
+        listaModelo.setSelection(indice(MODELOS, prefs.getString("modelo", MODELOS[0])));
+        agregar(contGemini, "Modelo de voz", listaModelo);
+
+        listaVoz = new Spinner(this);
+        listaVoz.setAdapter(adaptador(ETIQUETAS_VOZ));
+        listaVoz.setSelection(indice(VOCES, prefs.getString("voz", VOCES[0])));
+        agregar(contGemini, "Voz", listaVoz);
+
+        botonMuestra = new Button(this);
+        botonMuestra.setText("Escuchar una muestra de la voz elegida");
+        botonMuestra.setOnClickListener(v -> muestraVoz(false));
+        contGemini.addView(botonMuestra);
+
+        listaVoz2 = new Spinner(this);
+        listaVoz2.setAdapter(adaptador(ETIQUETAS_VOZ2));
+        listaVoz2.setSelection(posicionVoz2(prefs.getString("voz2", "")));
+        agregar(contGemini, "Segunda voz de la conversación, solo si escribes un diálogo con nombres",
+                listaVoz2);
+
+        botonMuestra2 = new Button(this);
+        botonMuestra2.setText("Escuchar una muestra de la segunda voz");
+        botonMuestra2.setOnClickListener(v -> muestraVoz(true));
+        contGemini.addView(botonMuestra2);
+
+        campoEstilo = new EditText(this);
+        campoEstilo.setInputType(InputType.TYPE_CLASS_TEXT);
+        campoEstilo.setSingleLine(true);
+        campoEstilo.setHint("Ejemplo: en tono alegre y pausado");
+        campoEstilo.setText(prefs.getString("estilo", ""));
+        agregar(contGemini, "Estilo de la voz, opcional", campoEstilo);
+        secVoz.cuerpo.addView(contGemini);
+        construirSistema(secVoz.cuerpo);
+
+        // Herramientas del texto
+        Seccion secHerr = nuevaSeccion(raiz, "herramientas",
+                "Herramientas: expresiones, efectos, sonidos e IA", false);
+
+        botonContar = new Button(this);
+        botonContar.setText("Contar caracteres");
+        secHerr.cuerpo.addView(botonContar);
+
+        botonBorrar = new Button(this);
+        botonBorrar.setText("Borrar texto y borrador");
+        secHerr.cuerpo.addView(botonBorrar);
+
+        botonExpresiones = new Button(this);
+        botonExpresiones.setText("Expresiones de voz");
+        secHerr.cuerpo.addView(botonExpresiones);
+
+        botonEfectos = new Button(this);
+        botonEfectos.setText("Efectos de sonido");
+        secHerr.cuerpo.addView(botonEfectos);
+
+        botonSonidos = new Button(this);
+        botonSonidos.setText("Sonidos de ambiente y emociones");
+        secHerr.cuerpo.addView(botonSonidos);
+
+        botonPerfeccionar = new Button(this);
+        botonPerfeccionar.setText("Perfeccionar con IA");
+        secHerr.cuerpo.addView(botonPerfeccionar);
+
+        botonDeshacer = new BotonOculto(this);
+        botonDeshacer.setText("Deshacer el perfeccionamiento");
+        botonDeshacer.setEnabled(false);
+        secHerr.cuerpo.addView(botonDeshacer);
+
+        // Nombre y formato del audio
+        Seccion secArchivo = nuevaSeccion(raiz, "archivo", "Nombre y formato del audio", false);
+
+        campoNombre = new EditText(this);
+        campoNombre.setInputType(InputType.TYPE_CLASS_TEXT);
+        campoNombre.setSingleLine(true);
+        campoNombre.setHint("Si lo dejas vacío se usa la fecha y la hora");
+        campoNombre.setText(prefs.getString("nombre", ""));
+        agregar(secArchivo.cuerpo, "Nombre del archivo de audio, opcional", campoNombre);
+
+        listaFormato = new Spinner(this);
+        listaFormato.setAdapter(adaptador(FORMATOS));
+        listaFormato.setSelection(indice(FORMATOS, prefs.getString("formato", FORMATOS[0])));
+        agregar(secArchivo.cuerpo, "Formato del audio", listaFormato);
+
+        // Clave API: cerrada cuando ya hay una guardada, abierta si falta
+        secClave = nuevaSeccion(raiz, "clave", "Clave API de Google Gemini", sinClave);
+
         campoClave = new EditText(this);
         campoClave.setInputType(InputType.TYPE_CLASS_TEXT
                 | InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD
                 | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
         campoClave.setSingleLine(true);
         campoClave.setText(prefs.getString("clave", ""));
-        etiquetaClave = agregar(raiz, ETIQUETA_CLAVE, campoClave);
+        etiquetaClave = agregar(secClave.cuerpo, ETIQUETA_CLAVE, campoClave);
         actualizarEtiquetaClave();
         // La clave se guarda en cuanto se escribe o se pega, y la etiqueta lo dice. Si el cuadro
         // queda vacío, la etiqueta no dice nada más.
@@ -409,140 +591,51 @@ public class MainActivity extends Activity {
             }
         });
 
-        listaMotor = new Spinner(this);
-        motoresSis = VocesSistema.motores(this);
-        String[] nombresMotor = new String[motoresSis.size() + 1];
-        nombresMotor[0] = "Gemini, en línea, con tu clave API";
-        String motorGuardado = prefs.getString("motor", "");
-        int selMotor = 0;
-        for (int i = 0; i < motoresSis.size(); i++) {
-            nombresMotor[i + 1] = "Voces del teléfono: " + motoresSis.get(i).etiqueta;
-            if (motoresSis.get(i).paquete.equals(motorGuardado)) selMotor = i + 1;
-        }
-        listaMotor.setAdapter(adaptador(nombresMotor));
-        listaMotor.setSelection(selMotor);
-        agregar(raiz, "Motor de voz", listaMotor);
+        // Biblioteca de voces (experimental)
+        Seccion secBib = nuevaSeccion(raiz, "biblioteca",
+                "Biblioteca de voces, función experimental", false);
+        contBib = secBib.envoltura;
+        construirBiblioteca(secBib.cuerpo);
 
-        contGemini = new LinearLayout(this);
-        contGemini.setOrientation(LinearLayout.VERTICAL);
+        // Tema, actualizaciones, canales y licencias
+        secAjustes = nuevaSeccion(raiz, "ajustes", "Tema, actualizaciones, canales y licencias",
+                false);
 
-        listaModelo = new Spinner(this);
-        listaModelo.setAdapter(adaptador(MODELOS));
-        listaModelo.setSelection(indice(MODELOS, prefs.getString("modelo", MODELOS[0])));
-        agregar(contGemini, "Modelo de voz", listaModelo);
-
-        listaVoz = new Spinner(this);
-        listaVoz.setAdapter(adaptador(VOCES));
-        listaVoz.setSelection(indice(VOCES, prefs.getString("voz", VOCES[0])));
-        agregar(contGemini, "Voz", listaVoz);
-
-        listaVoz2 = new Spinner(this);
-        listaVoz2.setAdapter(adaptador(ETIQUETAS_VOZ2));
-        listaVoz2.setSelection(posicionVoz2(prefs.getString("voz2", "")));
-        agregar(contGemini, "Segunda voz de la conversación, solo si escribes un diálogo con nombres",
-                listaVoz2);
-
-        campoEstilo = new EditText(this);
-        campoEstilo.setInputType(InputType.TYPE_CLASS_TEXT);
-        campoEstilo.setSingleLine(true);
-        campoEstilo.setHint("Ejemplo: en tono alegre y pausado");
-        campoEstilo.setText(prefs.getString("estilo", ""));
-        agregar(contGemini, "Estilo de la voz, opcional", campoEstilo);
-        raiz.addView(contGemini);
-        construirSistema(raiz);
-
-        campoNombre = new EditText(this);
-        campoNombre.setInputType(InputType.TYPE_CLASS_TEXT);
-        campoNombre.setSingleLine(true);
-        campoNombre.setHint("Si lo dejas vacío se usa la fecha y la hora");
-        campoNombre.setText(prefs.getString("nombre", ""));
-        agregar(raiz, "Nombre del archivo de audio, opcional", campoNombre);
-
-        listaFormato = new Spinner(this);
-        listaFormato.setAdapter(adaptador(FORMATOS));
-        listaFormato.setSelection(indice(FORMATOS, prefs.getString("formato", FORMATOS[0])));
-        agregar(raiz, "Formato del audio", listaFormato);
-
-        campoTexto = new EditText(this);
-        campoTexto.setInputType(InputType.TYPE_CLASS_TEXT
-                | InputType.TYPE_TEXT_FLAG_MULTI_LINE
-                | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
-        campoTexto.setMinLines(6);
-        campoTexto.setGravity(Gravity.TOP | Gravity.START);
-        campoTexto.setText(prefs.getString("borrador", ""));
-        agregar(raiz, "Texto que quieres convertir en audio", campoTexto);
-
-        botonContar = new Button(this);
-        botonContar.setText("Contar caracteres");
-        raiz.addView(botonContar);
-
-        botonBorrar = new Button(this);
-        botonBorrar.setText("Borrar texto y borrador");
-        raiz.addView(botonBorrar);
-
-        botonExpresiones = new Button(this);
-        botonExpresiones.setText("Expresiones de voz");
-        raiz.addView(botonExpresiones);
-
-        botonEfectos = new Button(this);
-        botonEfectos.setText("Efectos de sonido");
-        raiz.addView(botonEfectos);
-
-        botonSonidos = new Button(this);
-        botonSonidos.setText("Sonidos de ambiente y emociones");
-        raiz.addView(botonSonidos);
-
-        botonPerfeccionar = new Button(this);
-        botonPerfeccionar.setText("Perfeccionar con IA");
-        raiz.addView(botonPerfeccionar);
-
-        botonDeshacer = new Button(this);
-        botonDeshacer.setText("Deshacer el perfeccionamiento");
-        botonDeshacer.setEnabled(false);
-        raiz.addView(botonDeshacer);
-
-        botonConvertir = new Button(this);
-        botonConvertir.setText("Convertir a audio");
-        raiz.addView(botonConvertir);
-
-        botonDetener = new Button(this);
-        botonDetener.setText("Detener la conversión");
-        botonDetener.setEnabled(false);
-        raiz.addView(botonDetener);
-
-        botonReproducir = new Button(this);
-        botonReproducir.setText("Reproducir o detener el último audio");
-        botonReproducir.setEnabled(false);
-        raiz.addView(botonReproducir);
-
-        botonCompartir = new Button(this);
-        botonCompartir.setText("Compartir el último audio");
-        botonCompartir.setEnabled(false);
-        raiz.addView(botonCompartir);
+        listaTema = new Spinner(this);
+        listaTema.setAdapter(adaptador(TEMAS));
+        listaTema.setSelection(Math.max(0, Math.min(prefs.getInt("tema", 0), TEMAS.length - 1)));
+        agregar(secAjustes.cuerpo, "Tema de la pantalla", listaTema);
 
         botonBuscar = new Button(this);
         botonBuscar.setText("Buscar actualizaciones");
-        raiz.addView(botonBuscar);
+        secAjustes.cuerpo.addView(botonBuscar);
 
         botonCanales = new Button(this);
         botonCanales.setText("Nuestros canales");
-        raiz.addView(botonCanales);
+        secAjustes.cuerpo.addView(botonCanales);
 
         botonLicencias = new Button(this);
         botonLicencias.setText("Licencias");
-        raiz.addView(botonLicencias);
+        secAjustes.cuerpo.addView(botonLicencias);
 
-        contBib = new LinearLayout(this);
-        contBib.setOrientation(LinearLayout.VERTICAL);
-        construirBiblioteca(contBib);
-        raiz.addView(contBib);
+        listaTema.setOnItemSelectedListener(new AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(AdapterView<?> padre, View vista, int pos, long id) {
+                int guardado = prefs.getInt("tema", 0);
+                if (pos == guardado) return;
+                if (ocupado || perfeccionando) {
+                    decir("Espera a que termine la tarea en curso para cambiar el tema.");
+                    listaTema.setSelection(guardado);
+                    return;
+                }
+                prefs.edit().putInt("tema", pos).putBoolean("volver_tema", true).apply();
+                recreate();
+            }
 
-        estado = new TextView(this);
-        estado.setTextSize(16);
-        estado.setTextIsSelectable(true);
-        estado.setText("Listo. Escribe el texto y pulsa Convertir a audio.");
-        estado.setPadding(0, p, 0, 0);
-        raiz.addView(estado);
+            @Override
+            public void onNothingSelected(AdapterView<?> padre) {
+            }
+        });
 
         botonAyuda.setOnClickListener(v -> mostrarAyuda());
         botonContar.setOnClickListener(v -> contar());
@@ -589,13 +682,23 @@ public class MainActivity extends Activity {
         });
         aplicarMotor(false);
 
-        setContentView(sv);
+        setContentView(pantalla);
         if (savedInstanceState == null) sonar("inicio");
         if (!nombreVersion.equals(prefs.getString("ayuda_version", ""))) {
             prefs.edit().putString("ayuda_version", nombreVersion).apply();
             ui.post(() -> mostrarAyuda());
         }
         buscarActualizacion(false);
+        if (prefs.getBoolean("volver_tema", false)) {
+            // Después de cambiar el tema la pantalla se dibuja de nuevo: se deja el foco en la lista
+            // del tema y se dice cómo quedó.
+            prefs.edit().putBoolean("volver_tema", false).apply();
+            ui.postDelayed(() -> {
+                secAjustes.poner(true, false, false);
+                listaTema.requestFocus();
+                decir("Tema " + (temaOscuro() ? "oscuro" : "claro") + " aplicado.");
+            }, 600);
+        }
     }
 
     @Override
@@ -629,6 +732,232 @@ public class MainActivity extends Activity {
     }
 
     // ---------- Interfaz ----------
+
+    /** Botón que se oculta cuando está desactivado y aparece cuando se activa. */
+    static class BotonOculto extends Button {
+        BotonOculto(Context c) {
+            super(c);
+        }
+
+        @Override
+        public void setEnabled(boolean activo) {
+            super.setEnabled(activo);
+            setVisibility(activo ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    /**
+     * Sección con encabezado que se abre y se cierra. El encabezado es un botón marcado como
+     * encabezado, y su descripción dice si está abierta o cerrada, para el lector de pantalla.
+     */
+    class Seccion {
+        final String clave;
+        final String titulo;
+        final LinearLayout envoltura;
+        final LinearLayout cuerpo;
+        final Button cab;
+        boolean abierta;
+
+        Seccion(String clave, String titulo, boolean porDefecto) {
+            this.clave = clave;
+            this.titulo = titulo;
+            envoltura = new LinearLayout(MainActivity.this);
+            envoltura.setOrientation(LinearLayout.VERTICAL);
+            cab = new Button(MainActivity.this);
+            cab.setAllCaps(false);
+            cab.setTextSize(18);
+            cab.setTypeface(cab.getTypeface(), Typeface.BOLD);
+            cab.setGravity(Gravity.START | Gravity.CENTER_VERTICAL);
+            cab.setAccessibilityHeading(true);
+            cuerpo = new LinearLayout(MainActivity.this);
+            cuerpo.setOrientation(LinearLayout.VERTICAL);
+            cuerpo.setPadding(dp(8), 0, 0, dp(8));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.topMargin = dp(12);
+            envoltura.addView(cab, lp);
+            envoltura.addView(cuerpo);
+            cab.setOnClickListener(v -> poner(!abierta, true, true));
+            poner(prefs.getBoolean("sec_" + clave, porDefecto), false, false);
+        }
+
+        void poner(boolean abrir, boolean anunciar, boolean guardar) {
+            abierta = abrir;
+            cuerpo.setVisibility(abrir ? View.VISIBLE : View.GONE);
+            cab.setText(titulo + (abrir ? ", abierto" : ", cerrado"));
+            cab.setContentDescription(titulo + (abrir ? ". Abierto. Toca para ocultar."
+                    : ". Cerrado. Toca para mostrar."));
+            if (guardar) prefs.edit().putBoolean("sec_" + clave, abrir).apply();
+            if (anunciar) {
+                cab.announceForAccessibility(titulo + (abrir ? " abierto." : " cerrado."));
+            }
+        }
+    }
+
+    Seccion nuevaSeccion(LinearLayout raiz, String clave, String titulo, boolean porDefecto) {
+        Seccion s = new Seccion(clave, titulo, porDefecto);
+        raiz.addView(s.envoltura);
+        return s;
+    }
+
+    /** Abre la sección de la clave API, si está cerrada, y deja el foco en el cuadro. */
+    void pedirClave() {
+        if (secClave != null && !secClave.abierta) secClave.poner(true, false, false);
+        campoClave.requestFocus();
+    }
+
+    // ---------- Tema ----------
+
+    /** Claro, oscuro o el del teléfono (Automático). */
+    boolean temaOscuro() {
+        int modo = prefs.getInt("tema", 0);
+        if (modo == 1) return false;
+        if (modo == 2) return true;
+        return (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
+                == Configuration.UI_MODE_NIGHT_YES;
+    }
+
+    // ---------- Voces: elegida y muestras ----------
+
+    /** La voz elegida en la lista Voz, sin la descripción. */
+    String vozElegida() {
+        int pos = listaVoz.getSelectedItemPosition();
+        return pos >= 0 && pos < VOCES.length ? VOCES[pos] : VOCES[0];
+    }
+
+    static final String FRASE_MUESTRA = "Hola, esta es mi voz en el Convertidor de Café "
+            + "Tecnológico. Así sueno cuando leo tus textos.";
+
+    static String archivoMuestra(String modelo, String voz) {
+        return (modelo + "_" + voz).replaceAll("[^A-Za-z0-9._-]", "_") + ".wav";
+    }
+
+    boolean muestraSonando() {
+        try {
+            return muestraActual != null && muestraActual.isPlaying();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    void detenerMuestra() {
+        MediaPlayer mp = muestraActual;
+        muestraActual = null;
+        if (mp == null) return;
+        if (reproductor == mp) reproductor = null;
+        try {
+            mp.stop();
+        } catch (Exception ignorada) {
+            // ya había terminado
+        }
+        mp.release();
+    }
+
+    /**
+     * Escucha una muestra de la voz de la lista Voz o de la segunda voz. La primera vez se genera
+     * con la clave del usuario y se guarda en el teléfono; después se reproduce sin gastar cupo.
+     */
+    void muestraVoz(final boolean segunda) {
+        if (ocupado || perfeccionando) return;
+        if (muestraSonando()) {
+            detenerMuestra();
+            decir("Muestra detenida.");
+            return;
+        }
+        final String voz;
+        if (segunda) {
+            voz = voz2Elegida();
+            if (voz.isEmpty()) {
+                rechazar("La segunda voz está en Automática: se elige sola, de distinto género que "
+                        + "la primera. Elige una voz de la lista para escuchar su muestra.");
+                return;
+            }
+        } else {
+            voz = vozElegida();
+        }
+        final String modelo = (String) listaModelo.getSelectedItem();
+        final File dir = new File(getCacheDir(), "muestras");
+        dir.mkdirs();
+        final File archivo = new File(dir, archivoMuestra(modelo, voz));
+        if (archivo.exists() && archivo.length() > 0) {
+            reproducirMuestra(archivo, voz, true);
+            return;
+        }
+        final String clave = campoClave.getText().toString().trim();
+        if (clave.isEmpty()) {
+            rechazar("Falta la clave API para generar la muestra. Escríbela o pégala en la sección "
+                    + "Clave API de Google Gemini.");
+            pedirClave();
+            return;
+        }
+        guardarPrefs();
+        ocupado = true;
+        cancelar = false;
+        botonConvertir.setEnabled(false);
+        botonMuestra.setEnabled(false);
+        botonMuestra2.setEnabled(false);
+        decir("Generando la muestra de la voz " + voz + ". Espera un momento.");
+        iniciarCarga();
+        new Thread(() -> {
+            String error = null;
+            try {
+                byte[] datos = pedirConReintentos(clave, modelo, voz, "", FRASE_MUESTRA, null, null);
+                List<Audio> partes = new ArrayList<>();
+                partes.add(Audio.desdeBytes(datos));
+                byte[] wav = Audio.unir(partes, 0, 300);
+                File temporal = new File(dir, archivo.getName() + ".tmp");
+                try (java.io.FileOutputStream fos = new java.io.FileOutputStream(temporal)) {
+                    fos.write(wav);
+                }
+                if (!temporal.renameTo(archivo)) throw new Exception("No se pudo guardar la muestra.");
+            } catch (Exception e) {
+                error = e.getMessage() == null ? e.toString() : e.getMessage();
+            }
+            final String falla = error;
+            ui.post(() -> {
+                ocupado = false;
+                detenerCarga();
+                botonConvertir.setEnabled(true);
+                botonMuestra.setEnabled(true);
+                botonMuestra2.setEnabled(true);
+                if (falla != null) {
+                    sonar("aviso");
+                    decir("La muestra de la voz " + voz + " falló. " + falla);
+                    return;
+                }
+                reproducirMuestra(archivo, voz, false);
+            });
+        }).start();
+    }
+
+    void reproducirMuestra(File archivo, String voz, boolean guardada) {
+        try {
+            detenerMuestra();
+            if (reproductor != null) {
+                reproductor.release();
+                reproductor = null;
+            }
+            MediaPlayer mp = new MediaPlayer();
+            reproductor = mp;
+            muestraActual = mp;
+            mp.setDataSource(archivo.getAbsolutePath());
+            mp.setOnCompletionListener(m -> {
+                m.release();
+                if (reproductor == m) reproductor = null;
+                if (muestraActual == m) muestraActual = null;
+                decir("Terminó la muestra de la voz " + voz + ".");
+            });
+            mp.prepare();
+            mp.start();
+            decir("Reproduciendo la muestra" + (guardada ? " guardada" : "") + " de la voz " + voz
+                    + ".");
+        } catch (Exception e) {
+            reproductor = null;
+            muestraActual = null;
+            archivo.delete();
+            decir("No se pudo reproducir la muestra. " + e.getMessage());
+        }
+    }
 
     int dp(int v) {
         return (int) (v * getResources().getDisplayMetrics().density);
@@ -779,7 +1108,7 @@ public class MainActivity extends Activity {
         prefs.edit()
                 .putString("clave", campoClave.getText().toString().trim())
                 .putString("modelo", (String) listaModelo.getSelectedItem())
-                .putString("voz", (String) listaVoz.getSelectedItem())
+                .putString("voz", vozElegida())
                 .putString("voz2", voz2Elegida())
                 .putString("estilo", campoEstilo.getText().toString())
                 .putString("borrador", campoTexto.getText().toString())
@@ -877,7 +1206,7 @@ public class MainActivity extends Activity {
         final VocesSistema.Motor motorSis = motorElegido();
         final boolean sistema = motorSis != null;
         final Audio.Biblioteca.Voz vozBib = !sistema && usarBib.isChecked() ? bibElegida() : null;
-        final String voz = vozBib != null ? vozBib.id : (String) listaVoz.getSelectedItem();
+        final String voz = vozBib != null ? vozBib.id : vozElegida();
         final String formato = (String) listaFormato.getSelectedItem();
 
         if (texto.isEmpty()) {
@@ -900,7 +1229,7 @@ public class MainActivity extends Activity {
             }
             if (!sistema && clave.isEmpty()) {
                 rechazar("Falta la clave API. Escríbela o pégala en el primer campo.");
-                campoClave.requestFocus();
+                pedirClave();
                 return;
             }
         }
@@ -2443,7 +2772,7 @@ public class MainActivity extends Activity {
         final String texto = campoTexto.getText().toString().trim();
         if (clave.isEmpty()) {
             rechazar("Falta la clave API. Escríbela o pégala en el primer campo.");
-            campoClave.requestFocus();
+            pedirClave();
             return;
         }
         if (texto.isEmpty()) {
@@ -2703,13 +3032,6 @@ public class MainActivity extends Activity {
     // ---------- Biblioteca de voces (función experimental) ----------
 
     void construirBiblioteca(LinearLayout raiz) {
-        TextView titulo = new TextView(this);
-        titulo.setText("Biblioteca de voces. Función experimental.");
-        titulo.setTextSize(20);
-        titulo.setAccessibilityHeading(true);
-        titulo.setPadding(0, dp(24), 0, 0);
-        raiz.addView(titulo);
-
         TextView nota = new TextView(this);
         nota.setText("Voces regionales en español de la biblioteca extendida de Google: México, "
                 + "Argentina y España. Está en prueba y Google puede cambiarla o retirarla. Si una "
@@ -2926,7 +3248,7 @@ public class MainActivity extends Activity {
         final String clave = campoClave.getText().toString().trim();
         if (clave.isEmpty()) {
             rechazar("Falta la clave API. Escríbela o pégala en el primer campo.");
-            campoClave.requestFocus();
+            pedirClave();
             return;
         }
         ocupado = true;
@@ -3040,7 +3362,7 @@ public class MainActivity extends Activity {
         final String clave = campoClave.getText().toString().trim();
         if (clave.isEmpty()) {
             rechazar("Falta la clave API. Escríbela o pégala en el primer campo.");
-            campoClave.requestFocus();
+            pedirClave();
             return;
         }
         final String modelo = (String) listaModelo.getSelectedItem();
